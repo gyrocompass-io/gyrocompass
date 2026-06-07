@@ -245,3 +245,4 @@ temp/
 *.bak
 *.orig
 *.rej
+.vercel
