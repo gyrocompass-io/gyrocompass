@@ -84,6 +84,7 @@ nav.scrolled{background:rgba(255,255,255,.85);backdrop-filter:blur(16px);border-
   animation:fadeUp .7s .1s ease both;font-family:var(--display);}
 .hero h1 .grad{background:linear-gradient(120deg,var(--blue) 0%,#3b82f6 55%,var(--navy) 100%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.h1-gap{display:block;height:.55em;}
 /* Hand-drawn blue marker underline */
 .underlined{display:inline;color:var(--navy);-webkit-text-fill-color:var(--navy);
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' width='500' height='14' viewBox='0 0 500 14'%3E%3Cpath d='M1 9 C 50 6, 100 12, 160 8 C 220 5, 280 11, 340 8 C 390 6, 440 11, 499 8' stroke='%231877f2' stroke-width='4' fill='none' stroke-linecap='round' opacity='0.95'/%3E%3Cpath d='M1 11 C 60 9, 130 13, 200 10 C 270 8, 350 12, 430 10 C 460 9, 490 11, 499 10' stroke='%231559c9' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.45'/%3E%3C/svg%3E");
@@ -297,9 +298,10 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
   <div class="hero-badge"><span></span> Open Source · MIT License · v0.1.0</div>
 
   <h1>
-    AI writes 90% of your code.<br/>
-    &amp; you're shipping fast.<br/>
-    <span class="grad">Don't fly blind —</span> <span class="underlined">keep architectural guardrails</span><br/>to keep your architecture healthy.
+    AI is writing 90% of your code.<br/>
+    You're shipping faster than ever.
+    <span class="h1-gap"></span>
+    <span class="grad">Don't fly blind —</span> <span class="underlined">keep architectural guardrails</span><br/>that protect your architecture from AI-driven architectural drift.
   </h1>
 
   <p class="hero-sub">
