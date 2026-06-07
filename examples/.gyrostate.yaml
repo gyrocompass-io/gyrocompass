@@ -1,0 +1,568 @@
+# ── GyroCompass Architecture State ───────────────────────────────────────────
+#
+# File: .gyro/.gyrostate.yaml
+#
+# This file is the living architecture document for your project. It is the
+# single source of truth that GyroCompass uses to:
+#
+#   • Answer "what does this file do architecturally?" (get_file_context)
+#   • Compute blast radius of a change (get_impact)
+#   • Validate changes against principles and ADRs (check_compliance)
+#   • Generate the PR drift report (gyro drift)
+#
+# Keep this file in version control. Update it when architecture changes.
+# GyroCompass can generate and maintain it automatically (gyro index --update).
+#
+# Schema version: 1.0
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Metadata ──────────────────────────────────────────────────────────────────
+metadata:
+  version: "1.0"
+  serial: 14
+  project: acme-saas
+  commit_sha: null          # populated automatically by gyro index
+  captured_at: "2025-06-01T09:00:00Z"
+  generator: gyrocompass
+
+
+# ── Architecture Elements ──────────────────────────────────────────────────────
+#
+# Each key is a stable element ID. Use kebab-case (service names, not file paths).
+# IDs are referenced in rules, the file map, and relationship targets.
+#
+# Element types: container | component | external_system | service | database | queue | cache
+# Statuses: implemented | planned | deprecated | removed
+# ─────────────────────────────────────────────────────────────────────────────
+architecture:
+
+  # ── Backend services ─────────────────────────────────────────────────────
+  api-server:
+    type: container
+    category: backend
+    description: >
+      FastAPI application server. Handles all user-facing REST API requests,
+      enforces authentication via JWT middleware, and delegates business logic
+      to domain service modules. Stateless; all persistent state lives in
+      postgres or redis.
+    status: implemented
+    facts:
+      - Runs on port 8000 inside Docker, exposed as port 7700 externally
+      - All endpoints require JWT authentication except /health and /auth/*
+      - Request validation is performed by Pydantic v2 models before handlers run
+      - Structured JSON logging via structlog; no PII in log payloads
+    tags:
+      - python
+      - fastapi
+      - backend
+    relationships:
+      postgres:
+        target: postgres
+        type: sync
+        protocol: postgresql
+        description: Reads and writes all application data via SQLAlchemy async ORM
+      redis:
+        target: redis
+        type: sync
+        protocol: redis
+        description: Session token cache, rate-limit counters, idempotency keys
+      payment-service:
+        target: payment-service
+        type: sync
+        protocol: http/json
+        description: Delegates all payment operations; never touches Stripe directly
+      frontend:
+        target: frontend
+        type: sync
+        protocol: http/json
+        description: Serves the REST API consumed by the Next.js frontend
+
+  payment-service:
+    type: service
+    category: backend
+    description: >
+      Isolated microservice that owns all payment processing. Wraps the Stripe
+      API and enforces idempotency, retry logic, and PCI-compliance boundaries.
+      The api-server MUST NOT call Stripe directly; all payment intent creation,
+      capture, and refund flows go through this service.
+    status: implemented
+    facts:
+      - All mutations (charge, refund, cancel) require an idempotency key header
+      - Webhook signatures are validated with STRIPE_WEBHOOK_SECRET before processing
+      - No card data or raw PAN is stored; Stripe tokens only
+      - Emits order.payment_succeeded and order.payment_failed events to the event bus
+    tags:
+      - python
+      - fastapi
+      - payments
+      - pci
+    relationships:
+      stripe:
+        target: stripe
+        type: sync
+        protocol: https
+        description: Stripe API — charge, refund, webhook ingestion
+      postgres:
+        target: postgres
+        type: sync
+        protocol: postgresql
+        description: Stores payment records, idempotency key ledger
+      event-bus:
+        target: event-bus
+        type: async
+        protocol: amqp
+        description: Publishes payment lifecycle events for downstream consumers
+
+  # ── Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    type: container
+    category: frontend
+    description: >
+      Next.js 14 application with App Router. Server components handle data
+      fetching; client components are reserved for interactive widgets. Talks
+      exclusively to api-server — no direct database or third-party API access
+      from the browser.
+    status: implemented
+    facts:
+      - App Router; no Pages Router code
+      - Authentication is handled via HTTP-only cookies (no localStorage tokens)
+      - All data fetching goes through the api-server REST API
+      - SWR used for client-side mutation and cache invalidation
+    tags:
+      - typescript
+      - nextjs
+      - frontend
+    relationships:
+      api-server:
+        target: api-server
+        type: sync
+        protocol: http/json
+        description: Primary API consumer — all data reads and writes
+
+  # ── Data stores ───────────────────────────────────────────────────────────
+  postgres:
+    type: database
+    category: storage
+    description: >
+      PostgreSQL 16. Primary OLTP datastore for all application entities.
+      Migrations managed by Alembic. Schema changes require a migration file
+      checked into version control.
+    status: implemented
+    facts:
+      - All schema changes must go through Alembic migrations (no manual DDL)
+      - Sensitive columns (SSN, payment tokens) are encrypted at rest via pgcrypto
+      - Connection pooling via asyncpg with a max pool size of 20
+    tags:
+      - postgresql
+      - sql
+
+  redis:
+    type: cache
+    category: storage
+    description: >
+      Redis 7. Used for ephemeral data only: session token validation, rate-limit
+      counters, and short-lived idempotency keys. Not a primary datastore — data
+      loss on restart is acceptable for all Redis-stored values.
+    status: implemented
+    facts:
+      - maxmemory-policy is allkeys-lru; eviction is expected
+      - TTLs are mandatory on every key written by application code
+      - No persistent data — Redis is treated as a lossy cache
+    tags:
+      - redis
+      - cache
+
+  # ── External systems ──────────────────────────────────────────────────────
+  stripe:
+    type: external_system
+    category: payments
+    description: >
+      Stripe payment processing platform. Accessed exclusively through the
+      payment-service; no other service may call Stripe APIs directly.
+    status: implemented
+    facts:
+      - Payment Intents API for card-present and card-not-present flows
+      - Webhook events are the authoritative source for payment status
+    tags:
+      - third-party
+      - payments
+
+  event-bus:
+    type: queue
+    category: messaging
+    description: >
+      RabbitMQ message broker used for async event delivery between services.
+      Currently used by payment-service to publish payment lifecycle events.
+      Planned: order-service will subscribe to payment events to update order
+      status without polling.
+    status: implemented
+    facts:
+      - AMQP 0-9-1 protocol
+      - All messages are durable and persisted to disk
+      - Dead-letter queues configured for failed message handling
+    tags:
+      - rabbitmq
+      - messaging
+
+  sendgrid:
+    type: external_system
+    category: notifications
+    description: >
+      SendGrid transactional email. Used for account verification, password
+      reset, and order confirmation emails. Called only from the api-server
+      notification module.
+    status: implemented
+    facts:
+      - Dynamic templates used; no raw HTML constructed in application code
+      - Email addresses are the only PII sent to SendGrid
+    tags:
+      - third-party
+      - email
+
+
+# ── Data Model ─────────────────────────────────────────────────────────────────
+#
+# Key business entities and their attributes. Sensitivity levels:
+#   public       — safe to return in API responses without redaction
+#   internal     — internal use; don't expose in public-facing APIs
+#   confidential — sensitive; requires authorization check before access
+#   pii          — personal identifiable information; additional safeguards required
+# ─────────────────────────────────────────────────────────────────────────────
+data_model:
+  entities:
+
+    User:
+      description: An authenticated user of the platform.
+      domain: identity
+      sensitivity: pii
+      facts:
+        - Passwords are stored as bcrypt hashes (cost factor 12); plaintext never persisted
+        - Email is normalized to lowercase before storage and indexing
+        - Deleted users are soft-deleted (deleted_at timestamp); hard deletes are prohibited
+      attributes:
+        - name: id
+          type: uuid
+          required: true
+          unique: true
+          description: Primary key, UUIDv4
+        - name: email
+          type: string
+          required: true
+          unique: true
+          description: User's email address — PII, must not appear in logs
+        - name: password_hash
+          type: string
+          required: true
+          unique: false
+          description: bcrypt hash — never returned in API responses
+        - name: full_name
+          type: string
+          required: false
+          unique: false
+          description: Display name — PII
+        - name: plan
+          type: string
+          required: true
+          unique: false
+          description: "Subscription tier: free | starter | pro | enterprise"
+        - name: created_at
+          type: datetime
+          required: true
+          unique: false
+        - name: deleted_at
+          type: datetime
+          required: false
+          unique: false
+          description: Soft-delete timestamp; null means active
+      relationships:
+        - target: Order
+          type: oneToMany
+          description: A user can have many orders
+
+    Order:
+      description: A completed or in-progress purchase by a user.
+      domain: commerce
+      sensitivity: confidential
+      facts:
+        - Status transitions are append-only; previous statuses are never overwritten
+        - Total amount is stored in cents (integer) to avoid floating-point errors
+        - Currency is stored as ISO 4217 code
+      attributes:
+        - name: id
+          type: uuid
+          required: true
+          unique: true
+          description: Primary key, UUIDv4
+        - name: user_id
+          type: uuid
+          required: true
+          unique: false
+          description: FK → User.id
+        - name: status
+          type: string
+          required: true
+          unique: false
+          description: "pending | paid | cancelled | refunded"
+        - name: amount_cents
+          type: integer
+          required: true
+          unique: false
+          description: Total order value in the smallest currency unit
+        - name: currency
+          type: string
+          required: true
+          unique: false
+          description: ISO 4217 currency code (e.g. USD)
+        - name: stripe_payment_intent_id
+          type: string
+          required: false
+          unique: true
+          description: Stripe PaymentIntent ID — confidential, internal use only
+        - name: idempotency_key
+          type: string
+          required: false
+          unique: true
+          description: Client-supplied idempotency key for safe retries
+        - name: created_at
+          type: datetime
+          required: true
+          unique: false
+        - name: updated_at
+          type: datetime
+          required: true
+          unique: false
+      relationships:
+        - target: User
+          type: manyToOne
+          description: Each order belongs to exactly one user
+        - target: OrderLineItem
+          type: oneToMany
+          description: An order contains one or more line items
+
+    OrderLineItem:
+      description: An individual product or SKU within an order.
+      domain: commerce
+      sensitivity: internal
+      facts:
+        - Unit price is stored at the time of purchase (snapshot), not looked up live
+      attributes:
+        - name: id
+          type: uuid
+          required: true
+          unique: true
+        - name: order_id
+          type: uuid
+          required: true
+          unique: false
+          description: FK → Order.id
+        - name: product_id
+          type: uuid
+          required: true
+          unique: false
+          description: FK → Product.id (product catalog not modeled here)
+        - name: quantity
+          type: integer
+          required: true
+          unique: false
+        - name: unit_price_cents
+          type: integer
+          required: true
+          unique: false
+          description: Snapshot of unit price at time of order creation
+      relationships:
+        - target: Order
+          type: manyToOne
+          description: Belongs to exactly one order
+
+
+# ── Capabilities ──────────────────────────────────────────────────────────────
+#
+# Capabilities are user-facing features documented at the product level.
+# The PM persona in perform-review checks every acceptance criterion here.
+# ─────────────────────────────────────────────────────────────────────────────
+capabilities:
+
+  user-authentication:
+    description: >
+      Users can register, log in, and manage their credentials. Sessions are
+      maintained via HTTP-only JWT cookies with a 24-hour expiry.
+    status: active
+    facts:
+      - Magic-link login is planned for Q3 but not yet implemented
+    acceptance_criteria:
+      - User can register with email + password
+      - Password is validated (min 12 chars, at least one special char)
+      - User receives a verification email after registration
+      - Unverified accounts cannot access protected resources
+      - User can log in and receive an HTTP-only session cookie
+      - User can log out, which invalidates the session token in Redis
+      - User can request a password reset email
+      - Password reset links expire after 1 hour
+
+  checkout-flow:
+    description: >
+      Users can add items to a cart and complete a purchase using a credit card.
+      Payment is processed via Stripe; the user receives an email confirmation.
+    status: active
+    acceptance_criteria:
+      - User can add one or more products to the cart
+      - Cart persists across browser sessions (stored server-side)
+      - User can initiate checkout and is presented with a Stripe payment form
+      - Successful payment creates an Order in status=paid
+      - Failed payment surfaces a user-friendly error message
+      - Duplicate submission (network retry) does not create a duplicate charge
+      - User receives an order confirmation email within 30 seconds of payment
+      - Order history is visible in the user's account dashboard
+
+  subscription-management:
+    description: >
+      Users on paid plans can upgrade, downgrade, or cancel their subscription.
+      Plan changes take effect at the end of the current billing cycle.
+    status: planned
+    acceptance_criteria:
+      - User can view their current plan and next billing date
+      - User can upgrade to a higher plan (effective immediately, prorated)
+      - User can downgrade to a lower plan (effective at period end)
+      - User can cancel (effective at period end; data retained for 30 days)
+      - Cancellation triggers a confirmation email
+
+
+# ── Tech Stack ─────────────────────────────────────────────────────────────────
+tech_stack:
+
+  fastapi:
+    type: framework
+    vendor: Sebastián Ramírez
+    version: "0.111"
+    facts:
+      - Async request handling via asyncio throughout
+      - Pydantic v2 for request/response validation
+
+  nextjs:
+    type: framework
+    vendor: Vercel
+    version: "14"
+    facts:
+      - App Router (no Pages Router)
+      - React Server Components for data-fetching paths
+
+  postgresql:
+    type: database
+    vendor: PostgreSQL Global Development Group
+    version: "16"
+    facts:
+      - Primary OLTP store
+      - Migrations managed by Alembic
+
+  sqlalchemy:
+    type: library
+    vendor: SQLAlchemy
+    version: "2.0"
+    facts:
+      - Async ORM via asyncpg driver
+      - All queries use ORM or explicit Core queries; raw SQL is prohibited
+
+  redis:
+    type: database
+    vendor: Redis Ltd
+    version: "7"
+    facts:
+      - Used for ephemeral data only
+
+  stripe-python:
+    type: library
+    vendor: Stripe
+    version: "7"
+    facts:
+      - Only imported inside payment-service; not available to api-server
+
+  rabbitmq:
+    type: service
+    vendor: Broadcom
+    version: "3.13"
+    facts:
+      - AMQP 0-9-1
+      - Used for async event delivery
+
+  pytest:
+    type: tool
+    vendor: pytest.org
+    version: "8"
+    facts:
+      - pytest-asyncio for async test cases
+      - factory_boy for test fixtures
+
+
+# ── API Surface ────────────────────────────────────────────────────────────────
+#
+# Public REST endpoints. auth_required: false only for health + auth bootstrap.
+# ─────────────────────────────────────────────────────────────────────────────
+surface_area:
+
+  GET /health:
+    type: api_endpoint
+    summary: Liveness probe — returns 200 if the API is up
+    auth_required: false
+    method: GET
+
+  POST /auth/register:
+    type: api_endpoint
+    summary: Create a new user account
+    auth_required: false
+    method: POST
+    request_schema:
+      email: string
+      password: string
+      full_name: string
+
+  POST /auth/login:
+    type: api_endpoint
+    summary: Exchange email + password for a session cookie
+    auth_required: false
+    method: POST
+    request_schema:
+      email: string
+      password: string
+
+  POST /auth/logout:
+    type: api_endpoint
+    summary: Invalidate the current session
+    auth_required: true
+    method: POST
+
+  GET /users/me:
+    type: api_endpoint
+    summary: Return the authenticated user's profile
+    auth_required: true
+    method: GET
+
+  GET /orders:
+    type: api_endpoint
+    summary: List the authenticated user's order history
+    auth_required: true
+    method: GET
+
+  POST /orders:
+    type: api_endpoint
+    summary: Create a new order and initiate payment intent creation
+    auth_required: true
+    method: POST
+    request_schema:
+      items:
+        type: array
+        items:
+          product_id: uuid
+          quantity: integer
+      idempotency_key: string
+
+  GET /orders/{order_id}:
+    type: api_endpoint
+    summary: Retrieve a single order by ID (must belong to the authenticated user)
+    auth_required: true
+    method: GET
+
+  POST /webhooks/stripe:
+    type: api_endpoint
+    summary: Ingest Stripe webhook events (signature-verified)
+    auth_required: false
+    method: POST

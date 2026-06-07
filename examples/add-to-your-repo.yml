@@ -1,0 +1,25 @@
+# GyroCompass Drift Check — copy this file to your repo at:
+#   .github/workflows/gyrocompass.yml
+#
+# Required secrets (add at least one LLM key in your repo Settings → Secrets):
+#   OPENAI_API_KEY        — for OpenAI
+#   ANTHROPIC_API_KEY     — for Anthropic Claude
+#   GYRO_LLM_BASE_URL     — for custom/self-hosted LLM endpoint
+#   GYRO_LLM_API_KEY      — API key for custom endpoint
+#
+# Make sure your repo has a .gyro/.gyrostate.yaml (run `gyro init && gyro analyze --save`)
+#
+name: GyroCompass Drift Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  gyrocompass:
+    uses: gyrocompass-io/gyrocompass/.github/workflows/gyrocompass-drift.yml@main
+    with:
+      llm_provider: openai           # or: anthropic | ollama | custom
+      fail_on_critical: true         # blocks merge on critical drift
+      fail_on_high: false            # set true for stricter enforcement
+    secrets: inherit

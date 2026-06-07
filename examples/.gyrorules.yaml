@@ -1,0 +1,235 @@
+# ── GyroCompass Architecture Rules ───────────────────────────────────────────
+#
+# File: .gyro/.gyrorules.yaml
+#
+# This file defines the architectural constraints that GyroCompass enforces on
+# every pull request and every agent commit. Rules are checked by:
+#
+#   • gyro drift     — CI drift detection (fails the PR on violations)
+#   • check_compliance — MCP tool called by Claude before coding and committing
+#   • gyro check     — local CLI check before pushing
+#
+# RULE TYPES:
+#   principles   — broad design guidelines (warn or block depending on severity)
+#   adrs         — Architecture Decision Records (immutable once accepted)
+#   invariants   — absolute constraints; violations always block merge
+#
+# STATUSES:
+#   active       — enforced by all GyroCompass checks
+#   proposed     — under discussion; advisory only, not blocking
+#   superseded   — replaced by a newer rule (referenced in that rule's context)
+#
+# ENFORCEMENT:
+#   block        — PR is blocked; the CI step exits 1
+#   warn         — PR comment is posted but CI step passes
+#   suggest      — informational only; no comment unless requested
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── Principles ────────────────────────────────────────────────────────────────
+#
+# Principles are broad design guidelines derived from the team's engineering
+# culture. They shape patterns across the codebase and are checked against
+# the semantic description of a change, not just file patterns.
+# ─────────────────────────────────────────────────────────────────────────────
+principles:
+
+  # ── P-001: Separation of concerns ─────────────────────────────────────────
+  separation-of-concerns:
+    description: >
+      Each service owns one bounded domain. The api-server handles HTTP routing
+      and request validation; it delegates all business logic to domain service
+      modules. Payment processing lives exclusively in payment-service. The
+      frontend never talks to the database, Stripe, or any third-party API
+      directly — all data flows through the api-server.
+    status: active
+    rationale: >
+      Mixing concerns at service boundaries creates hidden coupling that is hard
+      to test, hard to replace, and hard to reason about. A clear boundary means
+      a clear blast radius — when payment-service changes, we know exactly who
+      is affected.
+    scope:
+      - api-server
+      - payment-service
+      - frontend
+    evidence:
+      - pattern: "stripe"
+        type: import_check
+        file: "api/**/*.py"
+        description: >
+          The stripe library must not be imported inside api-server code.
+          All Stripe calls must go through the payment-service HTTP client.
+      - pattern: "from app.db"
+        type: import_check
+        file: "frontend/**/*.ts"
+        description: >
+          Database models must not be imported or instantiated in frontend code.
+      - pattern: "import psycopg|import asyncpg|from sqlalchemy"
+        type: import_check
+        file: "frontend/**/*.ts"
+        description: Database drivers must not be used in frontend code.
+
+  # ── P-002: No PII in logs ──────────────────────────────────────────────────
+  no-pii-in-logs:
+    description: >
+      Personally identifiable information (PII) must never appear in log
+      messages, error payloads returned to callers, or exception tracebacks
+      that are shipped to an observability platform. PII includes: email
+      addresses, full names, IP addresses, phone numbers, payment card data,
+      and any field marked sensitivity: pii in the data model.
+    status: active
+    rationale: >
+      Log data is routinely indexed, forwarded to third-party platforms, and
+      retained for months. PII in logs creates regulatory exposure (GDPR, CCPA)
+      and increases the blast radius of a log infrastructure breach.
+    scope:
+      - api-server
+      - payment-service
+    evidence:
+      - pattern: "log.*email|logger.*email|structlog.*email"
+        type: code_pattern
+        description: >
+          Log calls that include the email field are flagged for review.
+          Use user_id instead of email in log context.
+      - pattern: "log.*password|logger.*password"
+        type: code_pattern
+        description: >
+          Passwords must never appear in log output, even as "[REDACTED]".
+          Ensure Pydantic response models exclude password_hash.
+      - pattern: "traceback|exc_info=True"
+        type: code_pattern
+        description: >
+          When logging exceptions with full tracebacks, verify the exception
+          message and local variables do not contain PII fields.
+
+  # ── P-003: API authentication required ────────────────────────────────────
+  api-auth-required:
+    description: >
+      Every HTTP endpoint in api-server and payment-service must require JWT
+      authentication unless it is explicitly listed in the approved unauthenticated
+      allowlist: GET /health, POST /auth/register, POST /auth/login,
+      POST /webhooks/stripe (which uses signature-based auth instead).
+      New endpoints must not be added to the allowlist without an ADR.
+    status: active
+    rationale: >
+      Authentication-by-default prevents accidental data exposure when a new
+      route is added. The allowlist is intentionally short; adding to it is a
+      visible, reviewable architectural decision.
+    scope:
+      - api-server
+      - payment-service
+    evidence:
+      - pattern: "@router\\.(get|post|put|patch|delete)\\("
+        type: code_pattern
+        file: "api/**/*.py"
+        description: >
+          Every route decorator should be accompanied by a Depends(get_current_user)
+          dependency or an explicit AuthBypass annotation. Routes without either
+          are flagged as potential authentication gaps.
+
+
+# ── Architecture Decision Records ─────────────────────────────────────────────
+#
+# ADRs are immutable once accepted. A decision can only be changed by creating
+# a new ADR that supersedes the old one (update the old ADR's status field).
+# ─────────────────────────────────────────────────────────────────────────────
+adrs:
+
+  # ── ADR-001: Payment isolation ─────────────────────────────────────────────
+  ADR-001-payment-isolation:
+    title: Payment processing is isolated to payment-service
+    status: accepted
+    date: "2024-11-15"
+    context: >
+      Early prototypes had Stripe calls spread across multiple API handlers.
+      This created multiple secret-holding surfaces, made PCI scoping impossible,
+      and caused duplicate charge bugs when retries were added at the wrong layer.
+    decision: >
+      All Stripe API calls — charge creation, capture, refund, and webhook
+      ingestion — are consolidated inside payment-service. The api-server
+      communicates with payment-service over an internal HTTP API. No other
+      service may hold Stripe credentials or call the Stripe SDK directly.
+    scope:
+      - api-server
+      - payment-service
+      - stripe
+    consequences:
+      - payment-service is the only PCI-scoped service; audit scope is minimized
+      - api-server has no Stripe dependency; it can be tested without payment stubs
+      - An additional network hop is introduced for checkout flows (acceptable latency tradeoff)
+      - payment-service must be highly available; it is a hard dependency of checkout
+
+  # ── ADR-002: Idempotency keys on all payment mutations ─────────────────────
+  ADR-002-payment-idempotency:
+    title: All payment mutations require a client-supplied idempotency key
+    status: accepted
+    date: "2024-11-28"
+    context: >
+      Mobile and web clients retry failed requests due to network instability.
+      Without idempotency, a retry after a timeout could result in a duplicate
+      charge. The Stripe SDK supports idempotency keys natively.
+    decision: >
+      Every endpoint in payment-service that mutates state (create charge,
+      capture, refund, cancel) must accept an Idempotency-Key header.
+      The key is validated as a UUID and stored in PostgreSQL with the resulting
+      outcome. Duplicate requests with the same key return the cached outcome
+      without re-executing the mutation. Keys expire after 24 hours.
+    scope:
+      - payment-service
+    consequences:
+      - Clients must generate a stable UUID per user action (not per retry)
+      - Storage requirement: idempotency key table grows proportionally to order volume
+      - Expiry means clients cannot assume idempotency beyond 24 hours; stale
+        retries may still cause duplicates after expiry (acceptable for this use case)
+      - All payment mutation tests must include a duplicate-request test case
+
+
+# ── Invariants ────────────────────────────────────────────────────────────────
+#
+# Invariants are absolute constraints. They are checked deterministically
+# (pattern-matched or statically analyzed) rather than semantically.
+# Enforcement is always "block" — an invariant violation always fails CI.
+# ─────────────────────────────────────────────────────────────────────────────
+invariants:
+
+  # ── INV-001: No raw SQL ────────────────────────────────────────────────────
+  no-raw-sql:
+    description: >
+      Application code must not construct or execute raw SQL strings. All
+      database queries must use the SQLAlchemy ORM or SQLAlchemy Core expression
+      language. Raw SQL bypasses the ORM's type safety, migration tracking,
+      and injection prevention.
+    status: active
+    enforcement: block
+    scope:
+      - api-server
+      - payment-service
+    evidence:
+      - pattern: "text\\(\"SELECT|text\\(\"INSERT|text\\(\"UPDATE|text\\(\"DELETE"
+        type: code_pattern
+        description: SQLAlchemy text() calls with SQL keywords are flagged
+      - pattern: "execute\\(f\"|execute\\(\"SELECT|execute\\(\"INSERT"
+        type: code_pattern
+        description: Direct execute() calls with SQL strings are flagged
+      - pattern: "cursor\\.execute"
+        type: code_pattern
+        description: Raw psycopg cursor usage must not appear in application code
+
+  # ── INV-002: Migrations must accompany schema changes ─────────────────────
+  migration-required-for-schema-change:
+    description: >
+      Any pull request that modifies a SQLAlchemy model file (models.py or any
+      file in the models/ directory) must also include an Alembic migration file
+      in the alembic/versions/ directory. Schema changes without a migration
+      break the deploy process and cannot be safely applied in production.
+    status: active
+    enforcement: block
+    scope:
+      - api-server
+    evidence:
+      - pattern: "models\\.py|models/.*\\.py"
+        type: file_exists
+        description: >
+          When a model file is modified in a PR, check that at least one new
+          file exists under alembic/versions/ in the same PR diff.

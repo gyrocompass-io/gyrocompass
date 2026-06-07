@@ -1,0 +1,247 @@
+# ── GyroCompass .gitignore ────────────────────────────────────────────────────
+#
+# Covers Python backend, Node.js / Next.js frontend, Docker artifacts,
+# GyroCompass runtime files, and common editor/OS noise.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── GyroCompass runtime files ─────────────────────────────────────────────────
+#
+# SQLite database created by the API server (use PostgreSQL in production).
+*.db
+*.db-shm
+*.db-wal
+gyrocompass.db
+.gyrocompass.db
+
+# Attestation file — generated per-commit; NOT committed as part of normal workflow.
+# (If you want to track attestations in git, remove this line.)
+.gyro/.attestation.yaml
+
+# Local GyroCompass index cache
+.gyro/.gyromap.yaml.cache
+.gyro/.index/
+
+
+# ── Secrets and environment ────────────────────────────────────────────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# Keep the example file — it documents required variables
+!.env.example
+
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env.bak
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# mypy / pyright / ruff
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+
+# ── Node.js / Next.js ─────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Next.js build output
+.next/
+out/
+
+# Nuxt.js build / generate output
+.nuxt/
+dist/
+
+# Gatsby files
+.cache/
+# public/   (intentionally commented out — depends on your project layout)
+
+# Vite
+.vite/
+
+# Storybook
+storybook-static/
+
+# Parcel cache
+.parcel-cache/
+
+# TypeScript incremental compilation
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# ESLint cache
+.eslintcache
+
+# Stylelint cache
+.stylelintcache
+
+# Turborepo
+.turbo/
+
+# Vercel
+.vercel/
+
+# Netlify
+.netlify/
+
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Don't ignore docker-compose.yml or Dockerfiles — those are source artifacts.
+# Ignore volumes that may be mapped into local directories.
+docker-data/
+postgres-data/
+redis-data/
+
+
+# ── Editor and OS ─────────────────────────────────────────────────────────────
+
+# JetBrains IDEs (PyCharm, IntelliJ, WebStorm)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code (keep .vscode/settings.json if you want shared editor config)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+Session.vim
+.netrwhist
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V8
+.Trashes
+ehthumbs.db
+Thumbs.db
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+
+
+# ── Secrets and certificates ──────────────────────────────────────────────────
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials.json
+
+
+# ── Temporary files ───────────────────────────────────────────────────────────
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+*.rej

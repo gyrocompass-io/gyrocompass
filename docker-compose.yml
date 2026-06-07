@@ -1,0 +1,291 @@
+# ── GyroCompass — Docker Compose ──────────────────────────────────────────────
+#
+# Services:
+#   gyrocompass-api   FastAPI backend + MCP server   → http://localhost:7700
+#   gyrocompass-web   Next.js dashboard              → http://localhost:3000
+#   postgres          PostgreSQL 16 (optional)        → localhost:5432
+#   redis             Redis 7 (optional cache)        → localhost:6379
+#
+# QUICK START:
+#   cp .env.example .env          # fill in at minimum an LLM API key
+#   docker compose up             # starts api + web (SQLite by default)
+#
+# WITH POSTGRES:
+#   docker compose --profile postgres up
+#
+# WITH POSTGRES + REDIS:
+#   docker compose --profile postgres --profile redis up
+#
+# WITH DEEP CODE GRAPH (Phase 2 — Memgraph + Qdrant):
+#   docker compose --profile graph up
+#   Memgraph Lab UI → http://localhost:3001
+#
+# ENVIRONMENT:
+#   All configuration is sourced from the .env file at the repo root.
+#   See .env.example for every supported variable.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: gyrocompass
+
+# ── Shared defaults ────────────────────────────────────────────────────────────
+x-api-env: &api-env
+  env_file: .env
+  environment:
+    # These override .env file values when running inside Docker
+    API_HOST: "0.0.0.0"
+    API_PORT: "7700"
+    # When postgres profile is active, DATABASE_URL is set here;
+    # otherwise it falls back to the SQLite value in .env
+    DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/gyrocompass.db}
+    # Phase 2 deep code-graph engine (active with --profile graph)
+    MEMGRAPH_HOST: memgraph
+    MEMGRAPH_PORT: "7687"
+    QDRANT_URL: http://qdrant:6333
+    GYRO_GRAPH_BACKEND: graph
+
+x-restart: &restart
+  restart: unless-stopped
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # ── API (FastAPI + MCP server) ─────────────────────────────────────────────
+  gyrocompass-api:
+    <<: *restart
+    image: gyrocompass/api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: gyrocompass-api
+    <<: *api-env
+    ports:
+      - "${API_PORT:-7700}:7700"
+    volumes:
+      # Persist SQLite database and generated state files between restarts
+      - gyrocompass-data:/app/data
+      # Mount the user's repos into /repos so the indexer can scan them.
+      # Override TARGET_REPO_PATH in .env to point at a specific repo.
+      - ${REPOS_ROOT:-./}:/repos:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "api"
+      io.gyrocompass.description: "FastAPI backend and MCP server"
+
+  # ── Web Dashboard (Next.js) ────────────────────────────────────────────────
+  gyrocompass-web:
+    <<: *restart
+    image: gyrocompass/web:latest
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://gyrocompass-api:7700}
+    container_name: gyrocompass-web
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://gyrocompass-api:7700}
+      # Internal service URL used by Next.js server components / API routes
+      API_INTERNAL_URL: http://gyrocompass-api:7700
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      # Next.js build cache (speeds up container restarts during development)
+      - gyrocompass-next-cache:/app/.next/cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      gyrocompass-api:
+        condition: service_healthy
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "web"
+      io.gyrocompass.description: "Next.js dashboard"
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  # Profile: postgres
+  # Activate with: docker compose --profile postgres up
+  postgres:
+    <<: *restart
+    image: postgres:16-alpine
+    container_name: gyrocompass-postgres
+    profiles:
+      - postgres
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-gyrocompass}
+      POSTGRES_USER:     ${POSTGRES_USER:-gyrocompass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gyrocompass}
+      # Write-ahead log level for logical replication (useful for CDC later)
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - gyrocompass-pgdata:/var/lib/postgresql/data
+      # Drop SQL init scripts here if needed (e.g. extensions, schemas)
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gyrocompass} -d ${POSTGRES_DB:-gyrocompass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "postgres"
+      io.gyrocompass.description: "PostgreSQL 16 — team deployments"
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  # Profile: redis
+  # Activate with: docker compose --profile redis up
+  # Used for: session cache, drift result cache, rate limiting
+  redis:
+    <<: *restart
+    image: redis:7-alpine
+    container_name: gyrocompass-redis
+    profiles:
+      - redis
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - gyrocompass-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "redis"
+      io.gyrocompass.description: "Redis 7 — caching and rate limiting"
+
+  # ── Memgraph (deep code graph) ───────────────────────────────────────────────
+  # Profile: graph
+  # Activate with: docker compose --profile graph up
+  # Neo4j wire-compatible graph DB storing the code knowledge graph.
+  memgraph:
+    <<: *restart
+    image: memgraph/memgraph-mage:latest
+    container_name: gyrocompass-memgraph
+    profiles:
+      - graph
+    ports:
+      - "${MEMGRAPH_PORT:-7687}:7687"
+      - "${MEMGRAPH_MONITORING_PORT:-7444}:7444"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host localhost --port 7687 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "memgraph"
+      io.gyrocompass.description: "Memgraph — code knowledge graph"
+
+  # ── Memgraph Lab (graph UI) ──────────────────────────────────────────────────
+  # Profile: graph
+  # Web UI for exploring the code graph → http://localhost:3001
+  # (3000 is taken by the web dashboard, so Lab is exposed on 3001 externally.)
+  memgraph-lab:
+    <<: *restart
+    image: memgraph/lab:latest
+    container_name: gyrocompass-memgraph-lab
+    profiles:
+      - graph
+    ports:
+      - "${MEMGRAPH_LAB_PORT:-3001}:3000"
+    environment:
+      QUICK_CONNECT_MG_HOST: memgraph
+    depends_on:
+      memgraph:
+        condition: service_healthy
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "memgraph-lab"
+      io.gyrocompass.description: "Memgraph Lab — graph exploration UI"
+
+  # ── Qdrant (vector store) ────────────────────────────────────────────────────
+  # Profile: graph
+  # Vector store for semantic code search (UniXcoder embeddings).
+  qdrant:
+    <<: *restart
+    image: qdrant/qdrant:latest
+    container_name: gyrocompass-qdrant
+    profiles:
+      - graph
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - gyrocompass-net
+    labels:
+      io.gyrocompass.component: "qdrant"
+      io.gyrocompass.description: "Qdrant — semantic code search vector store"
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  gyrocompass-net:
+    driver: bridge
+    name: gyrocompass-net
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  gyrocompass-data:
+    name: gyrocompass-data
+
+  gyrocompass-next-cache:
+    name: gyrocompass-next-cache
+
+  gyrocompass-pgdata:
+    name: gyrocompass-pgdata
+
+  gyrocompass-redis-data:
+    name: gyrocompass-redis-data
+
+  memgraph_data:
+    name: gyrocompass-memgraph-data
+
+  qdrant_data:
+    name: gyrocompass-qdrant-data

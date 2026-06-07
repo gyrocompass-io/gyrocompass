@@ -1,0 +1,262 @@
+# ── GyroCompass Drift Check ───────────────────────────────────────────────────
+#
+# Reusable workflow that detects architectural drift on every pull request and
+# posts a structured comment with findings.
+#
+# USAGE — minimal (add to your repo at .github/workflows/gyrocompass.yml):
+#
+#   jobs:
+#     gyrocompass:
+#       uses: gyrocompass-io/gyrocompass/.github/workflows/gyrocompass-drift.yml@main
+#       secrets: inherit
+#
+# USAGE — with custom options:
+#
+#   jobs:
+#     gyrocompass:
+#       uses: gyrocompass-io/gyrocompass/.github/workflows/gyrocompass-drift.yml@main
+#       with:
+#         llm_provider: anthropic
+#         fail_on_critical: true
+#         fail_on_high: true
+#       secrets: inherit
+#
+# REQUIRED SECRETS (at least one LLM key):
+#   OPENAI_API_KEY      — OpenAI API key  (provider: openai)
+#   ANTHROPIC_API_KEY   — Anthropic key   (provider: anthropic)
+#
+# OPTIONAL SECRETS (for custom / self-hosted LLM endpoints):
+#   GYRO_LLM_BASE_URL   — OpenAI-compatible base URL (Azure, Together, Groq, …)
+#   GYRO_LLM_API_KEY    — API key for custom endpoint
+#   GYRO_LLM_MODEL      — Model name override
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: GyroCompass Drift Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  # ── Reusable workflow interface ───────────────────────────────────────────
+  workflow_call:
+    inputs:
+      llm_provider:
+        description: >
+          LLM backend to use for analysis.
+          One of: openai | anthropic | ollama | custom
+        type: string
+        default: 'openai'
+        required: false
+
+      fail_on_critical:
+        description: >
+          Exit with code 1 when critical-severity drift is detected.
+          Blocks merging if branch protection is configured.
+        type: boolean
+        default: true
+        required: false
+
+      fail_on_high:
+        description: >
+          Exit with code 1 when high-severity drift is detected.
+          Disabled by default so high findings are advisory, not blocking.
+        type: boolean
+        default: false
+        required: false
+
+      gyrocompass_version:
+        description: >
+          Pin a specific gyrocompass PyPI version (e.g. "0.2.1").
+          Defaults to the latest release.
+        type: string
+        default: ''
+        required: false
+
+      state_file:
+        description: >
+          Path to the .gyrostate.yaml file relative to the repo root.
+          Defaults to .gyro/.gyrostate.yaml
+        type: string
+        default: '.gyro/.gyrostate.yaml'
+        required: false
+
+      rules_file:
+        description: >
+          Path to the .gyrorules.yaml file relative to the repo root.
+          Defaults to .gyro/.gyrorules.yaml
+        type: string
+        default: '.gyro/.gyrorules.yaml'
+        required: false
+
+# ── Permissions ───────────────────────────────────────────────────────────────
+# Minimal surface: read code, write PR comments. Nothing else.
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  # ── Drift Detection ─────────────────────────────────────────────────────────
+  drift-check:
+    name: Architecture Drift Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history required for accurate diff against the base branch
+          fetch-depth: 0
+
+      # ── Python setup ─────────────────────────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # ── Install GyroCompass ───────────────────────────────────────────────
+      - name: Install GyroCompass
+        run: |
+          VERSION="${{ inputs.gyrocompass_version }}"
+          if [ -n "$VERSION" ]; then
+            pip install --quiet "gyrocompass==${VERSION}"
+          else
+            pip install --quiet gyrocompass
+          fi
+          gyro --version
+
+      # ── Detect changed files ──────────────────────────────────────────────
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          output_format: json
+          # Capture all change types so additions, modifications, and
+          # deletions are all fed to the drift engine
+          include_all_old_new_renamed_files: true
+
+      # ── Primary drift analysis ────────────────────────────────────────────
+      - name: Run Drift Check
+        id: drift
+        env:
+          # ── LLM credentials ───────────────────────────────────────────────
+          OPENAI_API_KEY:      ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+          # ── Provider selection ────────────────────────────────────────────
+          GYRO_LLM_PROVIDER:   ${{ inputs.llm_provider || 'openai' }}
+          # ── Custom / self-hosted endpoint (optional) ──────────────────────
+          GYRO_LLM_BASE_URL:   ${{ secrets.GYRO_LLM_BASE_URL }}
+          GYRO_LLM_API_KEY:    ${{ secrets.GYRO_LLM_API_KEY }}
+          GYRO_LLM_MODEL:      ${{ secrets.GYRO_LLM_MODEL }}
+          # ── State / rules paths ───────────────────────────────────────────
+          GYRO_STATE_FILE:     ${{ inputs.state_file || '.gyro/.gyrostate.yaml' }}
+          GYRO_RULES_FILE:     ${{ inputs.rules_file || '.gyro/.gyrorules.yaml' }}
+        run: |
+          # ── Execute drift analysis; write JSON report ──────────────────
+          gyro drift \
+            --files '${{ steps.changed-files.outputs.all_changed_files }}' \
+            --pr ${{ github.event.pull_request.number }} \
+            --base ${{ github.event.pull_request.base.sha }} \
+            --head ${{ github.event.pull_request.head.sha }} \
+            --state "${GYRO_STATE_FILE}" \
+            --rules "${GYRO_RULES_FILE}" \
+            --output json \
+            > /tmp/drift-report.json
+
+          # ── Extract summary fields for downstream steps ────────────────
+          echo "drift_score=$(python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/drift-report.json'))
+          print(f\"{d['drift_score']:.0%}\")
+          ")" >> $GITHUB_OUTPUT
+
+          echo "has_blocking=$(python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/drift-report.json'))
+          print(str(d['has_blocking_issues']).lower())
+          ")" >> $GITHUB_OUTPUT
+
+          echo "event_count=$(python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/drift-report.json'))
+          print(len(d['events']))
+          ")" >> $GITHUB_OUTPUT
+
+          echo "critical_count=$(python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/drift-report.json'))
+          print(sum(1 for e in d['events'] if e['severity'] == 'critical'))
+          ")" >> $GITHUB_OUTPUT
+
+          echo "high_count=$(python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/drift-report.json'))
+          print(sum(1 for e in d['events'] if e['severity'] == 'high'))
+          ")" >> $GITHUB_OUTPUT
+
+      # ── Render Markdown comment ───────────────────────────────────────────
+      - name: Generate PR Comment (Markdown)
+        env:
+          GYRO_STATE_FILE: ${{ inputs.state_file || '.gyro/.gyrostate.yaml' }}
+          GYRO_RULES_FILE: ${{ inputs.rules_file || '.gyro/.gyrorules.yaml' }}
+        run: |
+          gyro drift \
+            --files '${{ steps.changed-files.outputs.all_changed_files }}' \
+            --pr ${{ github.event.pull_request.number }} \
+            --base ${{ github.event.pull_request.base.sha }} \
+            --head ${{ github.event.pull_request.head.sha }} \
+            --state "${GYRO_STATE_FILE}" \
+            --rules "${GYRO_RULES_FILE}" \
+            --output markdown \
+            > /tmp/drift-comment.md
+
+      # ── Sticky PR comment (updates instead of creating a new one) ─────────
+      - name: Post or Update PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: gyrocompass-drift
+          path: /tmp/drift-comment.md
+
+      # ── Upload full report as a workflow artifact ─────────────────────────
+      - name: Upload Drift Report Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gyrocompass-drift-report
+          path: /tmp/drift-report.json
+          retention-days: 30
+
+      # ── Summary in Actions UI ─────────────────────────────────────────────
+      - name: Write Job Summary
+        if: always()
+        run: |
+          echo "## GyroCompass Drift Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Drift Score | ${{ steps.drift.outputs.drift_score }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Issues | ${{ steps.drift.outputs.event_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Critical | ${{ steps.drift.outputs.critical_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| High | ${{ steps.drift.outputs.high_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Blocking | ${{ steps.drift.outputs.has_blocking }} |" >> $GITHUB_STEP_SUMMARY
+
+      # ── Fail gate: CRITICAL ───────────────────────────────────────────────
+      - name: Fail on Critical Issues
+        if: >
+          (inputs.fail_on_critical != false) &&
+          (steps.drift.outputs.has_blocking == 'true') &&
+          (steps.drift.outputs.critical_count > 0)
+        run: |
+          echo "::error title=GyroCompass — Critical Drift::${{ steps.drift.outputs.critical_count }} critical architectural violation(s) detected. Review the PR comment for details."
+          exit 1
+
+      # ── Fail gate: HIGH ───────────────────────────────────────────────────
+      - name: Fail on High Issues
+        if: >
+          (inputs.fail_on_high == true) &&
+          (steps.drift.outputs.high_count > 0)
+        run: |
+          echo "::error title=GyroCompass — High Drift::${{ steps.drift.outputs.high_count }} high-severity architectural issue(s) detected. Review the PR comment for details."
+          exit 1
