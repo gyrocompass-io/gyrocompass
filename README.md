@@ -1,14 +1,28 @@
-# 🧭 GyroCompass
+<p align="center">
+  <img src="assets/logo.svg" alt="GyroCompass" width="96" height="96"/>
+</p>
 
-### AI writes 90% of your code & you're shipping fast. Don't fly blind — keep architectural guardrails.
+<h1 align="center">GyroCompass</h1>
 
-> **1000s of PRs later — does your architecture still make sense? Or has it become spaghetti?**
-> GyroCompass reads your living architecture from source, blocks drift the moment a commit crosses a boundary, and keeps Claude Code, Cursor, and every AI agent oriented. So your system stays coherent no matter how fast you ship.
+<p align="center"><b>AI writes 90% of your code & you're shipping fast.<br/>Don't fly blind — keep architectural guardrails.</b></p>
 
-[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://python.org)
-[![Works with](https://img.shields.io/badge/works%20with-Claude%20Code%20·%20Cursor%20·%20Codex%20·%20any%20MCP%20agent-f97316.svg)](#)
-[![Status](https://img.shields.io/badge/status-launching%20soon-f97316.svg)](#)
+<p align="center">
+1000s of PRs later — does your architecture still make sense? Or has it become spaghetti?<br/>
+GyroCompass reads your living architecture from source, blocks drift the moment a commit crosses a<br/>
+boundary, and keeps Claude Code, Cursor, and every AI agent oriented — so your system stays coherent<br/>
+no matter how fast you ship.
+</p>
+
+<p align="center">
+  <a href="https://gyrocompass.vercel.app"><b>🌐 gyrocompass.vercel.app</b></a>
+</p>
+
+<p align="center">
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1877f2.svg" alt="MIT License"/></a>
+<a href="https://python.org"><img src="https://img.shields.io/badge/python-3.12+-1877f2.svg" alt="Python 3.12+"/></a>
+<img src="https://img.shields.io/badge/works%20with-Claude%20Code%20·%20Cursor%20·%20Codex%20·%20any%20MCP%20agent-0f2148.svg" alt="Works with"/>
+<img src="https://img.shields.io/badge/status-launching%20soon-1877f2.svg" alt="Status"/>
+</p>
 
 ---
 

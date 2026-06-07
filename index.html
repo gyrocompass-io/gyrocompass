@@ -3,269 +3,229 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GyroCompass — Don't fly blind. Architectural guardrails for AI-generated code.</title>
-<!-- Geist: Vercel's engineering-grade display font — precise, modern, trusted by serious devtools -->
+<title>GyroCompass — Don't fly blind. Architectural guardrails for AI coding agents.</title>
+<meta name="description" content="GyroCompass reads your living architecture from source, blocks drift the moment a commit crosses a boundary, and keeps Claude Code, Cursor, and every AI agent oriented."/>
+<meta property="og:title" content="GyroCompass — Don't fly blind."/>
+<meta property="og:description" content="Architectural guardrails for AI coding agents. Keep your architecture healthy across 1000s of AI-generated PRs."/>
+<meta property="og:type" content="website"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230f2148'/%3E%3Cpolygon points='16,6 12.5,17 16,14.5 19.5,17' fill='%231877f2'/%3E%3Cpolygon points='16,26 12.5,17 16,19.5 19.5,17' fill='%23ffffff'/%3E%3Ccircle cx='16' cy='16' r='2.2' fill='%23ffffff'/%3E%3C/svg%3E"/>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --orange:#f97316;--orange-dim:#ea580c;--orange-glow:rgba(249,115,22,.18);
-  --bg:#080808;--bg2:#0f0f0f;--bg3:#141414;
-  --white:#ffffff;--muted:#6b7280;--muted2:#9ca3af;--border:#1f1f1f;
+  --blue:#1877f2;--blue-deep:#1559c9;--blue-soft:rgba(24,119,242,.08);--blue-glow:rgba(24,119,242,.14);
+  --navy:#0f2148;--navy-2:#1c2f55;--navy-deep:#0b1733;
+  --bg:#ffffff;--bg-soft:#f3f7fd;--card:#ffffff;
+  --muted:#54648a;--muted-soft:#8593b3;--border:#e4eaf3;
+  --white:#ffffff;
   --font:'Inter',sans-serif;
   --display:'Geist','Inter',sans-serif;
   --mono:'JetBrains Mono',monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 html{scroll-behavior:smooth;}
-body{background:var(--bg);color:var(--white);font-family:var(--font);overflow-x:hidden;-webkit-font-smoothing:antialiased;}
+body{background:var(--bg);color:var(--navy);font-family:var(--font);overflow-x:hidden;-webkit-font-smoothing:antialiased;}
 
 /* ── SCROLLBAR ── */
-::-webkit-scrollbar{width:4px;}
-::-webkit-scrollbar-track{background:var(--bg);}
-::-webkit-scrollbar-thumb{background:var(--orange-dim);border-radius:2px;}
+::-webkit-scrollbar{width:5px;}
+::-webkit-scrollbar-track{background:var(--bg-soft);}
+::-webkit-scrollbar-thumb{background:var(--blue);border-radius:3px;}
 
 /* ── NAV ── */
 nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:1rem 2rem;
   display:flex;align-items:center;justify-content:space-between;
   border-bottom:1px solid transparent;transition:all .3s;}
-nav.scrolled{background:rgba(8,8,8,.92);backdrop-filter:blur(16px);border-color:var(--border);}
+nav.scrolled{background:rgba(255,255,255,.85);backdrop-filter:blur(16px);border-color:var(--border);box-shadow:0 1px 20px rgba(15,33,72,.05);}
 .nav-logo{display:flex;align-items:center;gap:.6rem;text-decoration:none;}
-.nav-logo svg{width:28px;height:28px;}
-.nav-logo span{font-weight:700;font-size:1.05rem;color:var(--white);font-family:var(--display);letter-spacing:-.01em;}
+.nav-logo svg{width:30px;height:30px;}
+.nav-logo span{font-weight:700;font-size:1.1rem;color:var(--navy);font-family:var(--display);letter-spacing:-.02em;}
 .nav-links{display:flex;align-items:center;gap:2rem;}
-.nav-links a{color:var(--muted2);text-decoration:none;font-size:.875rem;font-weight:500;transition:color .2s;}
-.nav-links a:hover{color:var(--white);}
-.nav-cta{background:var(--orange);color:#000;padding:.5rem 1.25rem;border-radius:8px;
-  font-size:.875rem;font-weight:700;text-decoration:none;transition:all .2s;}
-.nav-cta:hover{background:#fb923c;transform:translateY(-1px);}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:.875rem;font-weight:500;transition:color .2s;}
+.nav-links a:hover{color:var(--navy);}
+.nav-cta{background:var(--blue);color:#fff;padding:.5rem 1.25rem;border-radius:9px;
+  font-size:.875rem;font-weight:700;text-decoration:none;transition:all .2s;box-shadow:0 4px 12px rgba(24,119,242,.25);}
+.nav-cta:hover{background:var(--blue-deep);transform:translateY(-1px);box-shadow:0 6px 18px rgba(24,119,242,.35);}
 
 /* ── HERO ── */
 .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;
   justify-content:center;text-align:center;padding:4.5rem 2rem 1.5rem;position:relative;overflow:hidden;}
 .hero-bg{position:absolute;inset:0;pointer-events:none;}
-/* Grid */
 .hero-grid{position:absolute;inset:0;background-image:
-  linear-gradient(rgba(249,115,22,.04) 1px,transparent 1px),
-  linear-gradient(90deg,rgba(249,115,22,.04) 1px,transparent 1px);
-  background-size:60px 60px;animation:gridShift 20s linear infinite;}
-@keyframes gridShift{0%{transform:translateY(0);}100%{transform:translateY(60px);}}
-/* Glow orbs */
-.orb{position:absolute;border-radius:50%;filter:blur(80px);animation:breathe 6s ease-in-out infinite;}
-.orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(249,115,22,.2),transparent 70%);
-  top:-100px;left:50%;transform:translateX(-50%);}
-.orb-2{width:300px;height:300px;background:radial-gradient(circle,rgba(249,115,22,.12),transparent 70%);
-  bottom:10%;right:5%;animation-delay:-3s;}
-.orb-3{width:200px;height:200px;background:radial-gradient(circle,rgba(234,88,12,.15),transparent 70%);
-  top:30%;left:5%;animation-delay:-5s;}
-@keyframes breathe{0%,100%{opacity:.7;transform:scale(1);}50%{opacity:1;transform:scale(1.08);}}
+  linear-gradient(rgba(24,119,242,.05) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(24,119,242,.05) 1px,transparent 1px);
+  background-size:62px 62px;-webkit-mask-image:radial-gradient(circle at 50% 35%,#000,transparent 72%);
+  mask-image:radial-gradient(circle at 50% 35%,#000,transparent 72%);}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);animation:breathe 7s ease-in-out infinite;}
+.orb-1{width:520px;height:520px;background:radial-gradient(circle,rgba(24,119,242,.16),transparent 70%);
+  top:-120px;left:50%;transform:translateX(-50%);}
+.orb-2{width:300px;height:300px;background:radial-gradient(circle,rgba(59,130,246,.1),transparent 70%);
+  bottom:8%;right:6%;animation-delay:-3s;}
+.orb-3{width:240px;height:240px;background:radial-gradient(circle,rgba(24,119,242,.08),transparent 70%);
+  top:28%;left:4%;animation-delay:-5s;}
+@keyframes breathe{0%,100%{opacity:.6;transform:scale(1);}50%{opacity:1;transform:scale(1.08);}}
 
-/* Compass SVG animation */
-.compass-wrap{position:relative;width:88px;height:88px;margin:0 auto 1.1rem;}
-.compass-ring{animation:spin 12s linear infinite;}
-.compass-needle{animation:needle 3s ease-in-out infinite;}
-@keyframes spin{to{transform:rotate(360deg);transform-origin:center;}}
-@keyframes needle{0%,100%{transform:rotate(-15deg);}50%{transform:rotate(15deg);}}
+/* Compass */
+.compass-wrap{position:relative;width:90px;height:90px;margin:0 auto 1.1rem;}
+.compass-ring{animation:spin 16s linear infinite;transform-origin:60px 60px;}
+.compass-needle{animation:needle 3.2s ease-in-out infinite;transform-origin:60px 60px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes needle{0%,100%{transform:rotate(-14deg);}50%{transform:rotate(14deg);}}
 
 /* Badge */
 .hero-badge{display:inline-flex;align-items:center;gap:.5rem;
-  background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.25);
-  border-radius:999px;padding:.3rem .9rem;font-size:.76rem;font-weight:600;
-  color:var(--orange);margin-bottom:.9rem;
-  animation:fadeUp .6s ease both;}
-.hero-badge span{width:6px;height:6px;background:var(--orange);border-radius:50%;
-  animation:pulse 1.5s ease-in-out infinite;}
+  background:var(--blue-soft);border:1px solid rgba(24,119,242,.22);
+  border-radius:999px;padding:.32rem .95rem;font-size:.76rem;font-weight:600;
+  color:var(--blue);margin-bottom:1rem;animation:fadeUp .6s ease both;}
+.hero-badge span{width:6px;height:6px;background:var(--blue);border-radius:50%;animation:pulse 1.5s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.8);}}
 
-.hero h1{font-size:clamp(1.55rem,3.5vw,2.95rem);font-weight:900;line-height:1.1;
-  letter-spacing:-.03em;max-width:880px;animation:fadeUp .7s .1s ease both;
-  font-family:var(--display);}
-.hero h1 .grad{background:linear-gradient(135deg,#f97316 0%,#fb923c 40%,#ffffff 100%);
+.hero h1{font-size:clamp(1.55rem,3.5vw,2.95rem);font-weight:900;line-height:1.12;
+  letter-spacing:-.03em;max-width:880px;color:var(--navy);
+  animation:fadeUp .7s .1s ease both;font-family:var(--display);}
+.hero h1 .grad{background:linear-gradient(120deg,var(--blue) 0%,#3b82f6 55%,var(--navy) 100%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-
-/* Rough orange marker underline — full width, hand-drawn feel */
-.underlined{
-  display:inline;
-  color:#ffffff;
-  -webkit-text-fill-color:#ffffff;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' width='500' height='14' viewBox='0 0 500 14'%3E%3Cpath d='M1 9 C 50 6, 100 12, 160 8 C 220 5, 280 11, 340 8 C 390 6, 440 11, 499 8' stroke='%23f97316' stroke-width='4' fill='none' stroke-linecap='round' opacity='0.95'/%3E%3Cpath d='M1 11 C 60 9, 130 13, 200 10 C 270 8, 350 12, 430 10 C 460 9, 490 11, 499 10' stroke='%23ea580c' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.5'/%3E%3C/svg%3E");
-  background-repeat:no-repeat;
-  background-position:0 100%;
-  background-size:100% 14px;
-  background-clip:unset;
-  -webkit-background-clip:unset;
-  padding-bottom:8px;
-}
-.hero-sub{font-size:clamp(.9rem,1.6vw,1.02rem);color:var(--muted2);max-width:600px;
-  line-height:1.7;margin:.9rem auto 1.4rem;font-weight:400;
-  font-family:var(--font);animation:fadeUp .7s .2s ease both;}
-.hero-ctas{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;
-  animation:fadeUp .7s .3s ease both;}
-.btn-primary{background:var(--orange);color:#000;padding:.65rem 1.6rem;border-radius:10px;
-  font-weight:700;font-size:.88rem;text-decoration:none;display:inline-flex;align-items:center;
-  gap:.5rem;transition:all .2s;border:none;cursor:pointer;}
-.btn-primary:hover{background:#fb923c;transform:translateY(-2px);box-shadow:0 12px 30px rgba(249,115,22,.3);}
-.btn-secondary{background:transparent;color:var(--white);padding:.65rem 1.6rem;border-radius:10px;
-  font-weight:600;font-size:.88rem;text-decoration:none;display:inline-flex;align-items:center;
+/* Hand-drawn blue marker underline */
+.underlined{display:inline;color:var(--navy);-webkit-text-fill-color:var(--navy);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' width='500' height='14' viewBox='0 0 500 14'%3E%3Cpath d='M1 9 C 50 6, 100 12, 160 8 C 220 5, 280 11, 340 8 C 390 6, 440 11, 499 8' stroke='%231877f2' stroke-width='4' fill='none' stroke-linecap='round' opacity='0.95'/%3E%3Cpath d='M1 11 C 60 9, 130 13, 200 10 C 270 8, 350 12, 430 10 C 460 9, 490 11, 499 10' stroke='%231559c9' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.45'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:0 100%;background-size:100% 14px;
+  background-clip:unset;-webkit-background-clip:unset;padding-bottom:8px;}
+.hero-sub{font-size:clamp(.92rem,1.6vw,1.04rem);color:var(--muted);max-width:610px;
+  line-height:1.72;margin:1rem auto 1.5rem;font-weight:400;font-family:var(--font);
+  animation:fadeUp .7s .2s ease both;}
+.hero-ctas{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp .7s .3s ease both;}
+.btn-primary{background:var(--blue);color:#fff;padding:.7rem 1.7rem;border-radius:11px;
+  font-weight:700;font-size:.9rem;text-decoration:none;display:inline-flex;align-items:center;
+  gap:.5rem;transition:all .2s;border:none;cursor:pointer;box-shadow:0 6px 18px rgba(24,119,242,.28);}
+.btn-primary:hover{background:var(--blue-deep);transform:translateY(-2px);box-shadow:0 12px 28px rgba(24,119,242,.38);}
+.btn-secondary{background:#fff;color:var(--navy);padding:.7rem 1.7rem;border-radius:11px;
+  font-weight:600;font-size:.9rem;text-decoration:none;display:inline-flex;align-items:center;
   gap:.5rem;border:1px solid var(--border);transition:all .2s;}
-.btn-secondary:hover{border-color:rgba(249,115,22,.4);background:rgba(249,115,22,.05);transform:translateY(-2px);}
+.btn-secondary:hover{border-color:rgba(24,119,242,.45);background:var(--blue-soft);color:var(--blue);transform:translateY(-2px);}
 
 /* Agents strip */
-.agents-strip{margin-top:1.6rem;display:flex;flex-direction:column;align-items:center;gap:.6rem;
-  animation:fadeUp .7s .5s ease both;}
-.agents-label{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:600;}
-.agents-list{display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;justify-content:center;}
-.agent-chip{display:flex;align-items:center;gap:.45rem;background:var(--bg3);
-  border:1px solid var(--border);border-radius:999px;padding:.3rem .9rem;
-  font-size:.78rem;font-weight:500;color:var(--muted2);transition:all .2s;}
-.agent-chip:hover{border-color:rgba(249,115,22,.3);color:var(--white);}
+.agents-strip{margin-top:1.8rem;display:flex;flex-direction:column;align-items:center;gap:.7rem;animation:fadeUp .7s .5s ease both;}
+.agents-label{font-size:.72rem;color:var(--muted-soft);text-transform:uppercase;letter-spacing:.12em;font-weight:600;}
+.agents-list{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;justify-content:center;}
+.agent-chip{display:flex;align-items:center;gap:.4rem;background:#fff;
+  border:1px solid var(--border);border-radius:999px;padding:.32rem .9rem;
+  font-size:.78rem;font-weight:500;color:var(--muted);transition:all .2s;}
+.agent-chip:hover{border-color:rgba(24,119,242,.35);color:var(--navy);box-shadow:0 4px 12px rgba(15,33,72,.06);}
 
-/* Terminal preview */
-.terminal-wrap{display:none;}
-.terminal{background:#0d0d0d;border:1px solid #1e1e1e;border-radius:14px;
-  overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,.6),0 0 0 1px rgba(249,115,22,.08);}
-.term-bar{display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem;background:#111;border-bottom:1px solid #1a1a1a;}
+/* ── DARK code surfaces (terminal + PR card) — premium contrast on white ── */
+.terminal,.pr-card{background:var(--navy-deep);border:1px solid #1d2c50;border-radius:14px;overflow:hidden;
+  box-shadow:0 30px 70px rgba(15,33,72,.22),0 0 0 1px rgba(15,33,72,.03);}
+.term-bar{display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem;background:#0e1c3a;border-bottom:1px solid #1d2c50;}
 .term-dot{width:12px;height:12px;border-radius:50%;}
-.term-dot.red{background:#ff5f57;} .term-dot.yellow{background:#febc2e;} .term-dot.green{background:#28c840;}
-.term-title{flex:1;text-align:center;font-size:.75rem;color:var(--muted);font-family:var(--mono);}
+.term-dot.red{background:#ff5f57;}.term-dot.yellow{background:#febc2e;}.term-dot.green{background:#28c840;}
+.term-title{flex:1;text-align:center;font-size:.75rem;color:#7488ad;font-family:var(--mono);}
 .term-body{padding:1.25rem 1.5rem;font-family:var(--mono);font-size:.82rem;line-height:1.9;}
-.tc{color:var(--muted);} .to{color:var(--orange);font-weight:600;} .tg{color:#34d399;} .tw{color:#e2e8f0;}
-.td{color:#6b7280;} .ty{color:#fbbf24;} .tr{color:#fb7185;}
-.cursor{display:inline-block;width:8px;height:14px;background:var(--orange);
-  animation:blink .9s step-end infinite;vertical-align:text-bottom;margin-left:1px;}
+.tc{color:#7488ad;}.to{color:#5ea8ff;font-weight:600;}.tg{color:#34d399;}.tw{color:#dbe4f5;}
+.td{color:#5a6b8f;}.ty{color:#fbbf24;}.tr{color:#fb7185;}
+.cursor{display:inline-block;width:8px;height:14px;background:#5ea8ff;animation:blink .9s step-end infinite;vertical-align:text-bottom;margin-left:1px;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+.terminal-wrap{display:none;}
 
 /* ── STATS ── */
 .stats{padding:5rem 2rem;background:var(--bg);}
-.stats-inner{max-width:1100px;margin:0 auto;display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;
-  border:1px solid var(--border);border-radius:16px;overflow:hidden;}
-.stat{padding:2.5rem 2rem;background:var(--bg2);display:flex;flex-direction:column;align-items:center;
-  text-align:center;position:relative;overflow:hidden;transition:background .2s;}
-.stat::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--orange-glow),transparent);
-  opacity:0;transition:opacity .3s;}
+.stats-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;
+  border:1px solid var(--border);border-radius:18px;overflow:hidden;background:var(--border);box-shadow:0 10px 40px rgba(15,33,72,.06);}
+.stat{padding:2.5rem 2rem;background:#fff;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative;overflow:hidden;transition:background .2s;}
+.stat::before{content:'';position:absolute;inset:0;background:linear-gradient(160deg,var(--blue-glow),transparent 60%);opacity:0;transition:opacity .3s;}
 .stat:hover::before{opacity:1;}
 .stat-num{font-size:3rem;font-weight:900;letter-spacing:-.04em;line-height:1;
-  background:linear-gradient(135deg,var(--orange),#fb923c);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  font-family:var(--display);}
-.stat-label{font-size:.85rem;color:var(--muted2);margin-top:.6rem;font-weight:500;}
-.stat-sub{font-size:.72rem;color:var(--muted);margin-top:.25rem;}
+  background:linear-gradient(135deg,var(--blue),#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-family:var(--display);}
+.stat-label{font-size:.85rem;color:var(--navy);margin-top:.6rem;font-weight:600;}
+.stat-sub{font-size:.72rem;color:var(--muted-soft);margin-top:.25rem;}
 
 /* ── SECTION SHARED ── */
 section{padding:6rem 2rem;}
 .section-inner{max-width:1100px;margin:0 auto;}
-.section-label{font-size:.75rem;font-weight:700;color:var(--orange);text-transform:uppercase;
-  letter-spacing:.12em;margin-bottom:.75rem;}
-.section-title{font-size:clamp(1.8rem,4vw,3rem);font-weight:800;line-height:1.1;letter-spacing:-.025em;font-family:var(--display);}
-.section-sub{font-size:1rem;color:var(--muted2);margin-top:1rem;max-width:560px;line-height:1.7;}
+.section-label{font-size:.75rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.12em;margin-bottom:.75rem;}
+.section-title{font-size:clamp(1.8rem,4vw,3rem);font-weight:800;line-height:1.1;letter-spacing:-.025em;font-family:var(--display);color:var(--navy);}
+.section-sub{font-size:1rem;color:var(--muted);margin-top:1rem;max-width:560px;line-height:1.7;}
 
 /* ── HOW IT WORKS ── */
-.how{background:var(--bg);}
+.how{background:var(--bg-soft);}
 .steps{margin-top:3.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;}
-.step{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:2rem;
-  position:relative;overflow:hidden;transition:all .3s;cursor:default;}
-.step:hover{border-color:rgba(249,115,22,.3);transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.4);}
-.step::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent,var(--orange),transparent);
-  transform:scaleX(0);transition:transform .3s;}
+.step{background:#fff;border:1px solid var(--border);border-radius:16px;padding:2rem;position:relative;overflow:hidden;transition:all .3s;cursor:default;box-shadow:0 2px 10px rgba(15,33,72,.04);}
+.step:hover{border-color:rgba(24,119,242,.35);transform:translateY(-4px);box-shadow:0 20px 40px rgba(15,33,72,.1);}
+.step::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--blue),transparent);transform:scaleX(0);transition:transform .3s;}
 .step:hover::after{transform:scaleX(1);}
-.step-num{font-size:.72rem;font-weight:700;color:var(--orange);text-transform:uppercase;
-  letter-spacing:.12em;margin-bottom:1rem;}
-.step-icon{width:48px;height:48px;border-radius:12px;background:rgba(249,115,22,.1);
-  border:1px solid rgba(249,115,22,.2);display:flex;align-items:center;justify-content:center;
-  font-size:1.4rem;margin-bottom:1.25rem;}
-.step h3{font-size:1.05rem;font-weight:700;margin-bottom:.6rem;font-family:var(--display);letter-spacing:-.01em;}
-.step p{font-size:.875rem;color:var(--muted2);line-height:1.65;}
-.step-code{font-family:var(--mono);font-size:.78rem;background:#0a0a0a;border:1px solid #1a1a1a;
-  border-radius:8px;padding:.6rem .9rem;margin-top:1.25rem;color:var(--orange);}
+.step-num{font-size:.72rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.12em;margin-bottom:1rem;}
+.step-icon{width:48px;height:48px;border-radius:13px;background:var(--blue-soft);border:1px solid rgba(24,119,242,.18);display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:1.25rem;}
+.step h3{font-size:1.05rem;font-weight:700;margin-bottom:.6rem;font-family:var(--display);letter-spacing:-.01em;color:var(--navy);}
+.step p{font-size:.875rem;color:var(--muted);line-height:1.65;}
+.step-code{font-family:var(--mono);font-size:.78rem;background:var(--navy-deep);border:1px solid #1d2c50;border-radius:8px;padding:.6rem .9rem;margin-top:1.25rem;color:#5ea8ff;}
 
 /* ── FEATURES ── */
-.features{background:var(--bg2);}
+.features{background:var(--bg);}
 .features-grid{margin-top:3.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:1.5rem;}
-.feat{padding:1.75rem;border:1px solid var(--border);border-radius:14px;transition:all .3s;}
-.feat:hover{border-color:rgba(249,115,22,.25);background:rgba(249,115,22,.03);}
+.feat{padding:1.75rem;border:1px solid var(--border);border-radius:14px;transition:all .3s;background:#fff;box-shadow:0 2px 8px rgba(15,33,72,.03);}
+.feat:hover{border-color:rgba(24,119,242,.3);background:var(--blue-soft);transform:translateY(-3px);box-shadow:0 14px 30px rgba(15,33,72,.08);}
 .feat-icon{font-size:1.6rem;margin-bottom:1rem;}
-.feat h3{font-size:.95rem;font-weight:700;margin-bottom:.5rem;font-family:var(--display);letter-spacing:-.01em;}
-.feat p{font-size:.83rem;color:var(--muted2);line-height:1.65;}
-.feat-tag{display:inline-block;margin-top:.9rem;font-size:.68rem;font-weight:600;
-  color:var(--orange);background:rgba(249,115,22,.1);border-radius:999px;padding:.2rem .65rem;}
+.feat h3{font-size:.95rem;font-weight:700;margin-bottom:.5rem;font-family:var(--display);letter-spacing:-.01em;color:var(--navy);}
+.feat p{font-size:.83rem;color:var(--muted);line-height:1.65;}
+.feat-tag{display:inline-block;margin-top:.9rem;font-size:.68rem;font-weight:600;color:var(--blue);background:var(--blue-soft);border-radius:999px;padding:.22rem .7rem;}
 
 /* ── PR COMMENT demo ── */
-.pr-section{background:var(--bg);}
+.pr-section{background:var(--bg-soft);}
 .pr-cols{margin-top:3.5rem;display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center;}
 @media(max-width:768px){.pr-cols{grid-template-columns:1fr;}}
-.pr-card{background:#0d0d0d;border:1px solid #1e1e1e;border-radius:14px;overflow:hidden;
-  box-shadow:0 30px 60px rgba(0,0,0,.5);}
-.pr-card-bar{display:flex;align-items:center;gap:.5rem;padding:.7rem 1rem;background:#111;
-  border-bottom:1px solid #1a1a1a;font-family:var(--mono);font-size:.72rem;color:var(--muted);}
-.pr-bot{display:flex;align-items:center;gap:.5rem;padding:.9rem 1.1rem;
-  border-bottom:1px solid #141414;font-size:.8rem;color:var(--muted2);}
-.pr-bot-avatar{width:28px;height:28px;background:linear-gradient(135deg,var(--orange),#ea580c);
-  border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#000;}
-.pr-bot b{color:var(--white);}
+.pr-card-bar{display:flex;align-items:center;gap:.5rem;padding:.7rem 1rem;background:#0e1c3a;border-bottom:1px solid #1d2c50;font-family:var(--mono);font-size:.72rem;color:#7488ad;}
+.pr-bot{display:flex;align-items:center;gap:.5rem;padding:.9rem 1.1rem;border-bottom:1px solid #16264a;font-size:.8rem;color:#9fb0d0;}
+.pr-bot-avatar{width:28px;height:28px;background:linear-gradient(135deg,var(--blue),#3b82f6);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;}
+.pr-bot b{color:#dbe4f5;}
 .pr-body{padding:1rem 1.1rem;font-size:.8rem;line-height:1.8;}
 .pr-finding{display:flex;gap:.7rem;margin-bottom:.8rem;align-items:flex-start;}
 .pr-sev{font-size:.65rem;font-weight:700;padding:.18rem .5rem;border-radius:4px;margin-top:.15rem;flex-shrink:0;}
-.sev-high{background:rgba(251,113,133,.15);color:#fb7185;}
-.sev-med{background:rgba(251,191,36,.12);color:#fbbf24;}
-.sev-crit{background:rgba(251,113,133,.2);color:#f43f5e;}
-.pr-finding-text{font-family:var(--mono);font-size:.75rem;color:#e2e8f0;}
-.pr-finding-text .dim{color:var(--muted);} .pr-finding-text .file{color:#38bdf8;}
-.pr-drift-score{margin-top:1rem;padding:.75rem 1rem;background:#0a0a0a;border-radius:8px;
-  border:1px solid #1a1a1a;display:flex;align-items:center;justify-content:space-between;}
-.drift-bar-bg{flex:1;height:6px;background:#1a1a1a;border-radius:3px;margin:0 1rem;overflow:hidden;}
-.drift-bar-fill{height:100%;background:linear-gradient(90deg,#fbbf24,#f97316);border-radius:3px;
-  animation:barGrow 1.5s ease .5s both;}
+.sev-high{background:rgba(251,113,133,.16);color:#fb7185;}
+.sev-med{background:rgba(251,191,36,.14);color:#fbbf24;}
+.sev-crit{background:rgba(244,63,94,.2);color:#fb6f86;}
+.pr-finding-text{font-family:var(--mono);font-size:.75rem;color:#dbe4f5;}
+.pr-finding-text .dim{color:#7488ad;}.pr-finding-text .file{color:#5ea8ff;}
+.pr-drift-score{margin-top:1rem;padding:.75rem 1rem;background:#0e1c3a;border-radius:8px;border:1px solid #1d2c50;display:flex;align-items:center;justify-content:space-between;}
 @keyframes barGrow{from{width:0;}to{width:45%;}}
 
 /* ── ENFORCEMENT DEMO ── */
-.enforce{background:var(--bg2);padding:6rem 2rem;}
+.enforce{background:var(--bg);padding:6rem 2rem;}
 .enforce-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center;}
 @media(max-width:768px){.enforce-inner{grid-template-columns:1fr;}}
-.enforce-text .check-list{margin-top:1.5rem;display:flex;flex-direction:column;gap:.75rem;}
-.check-item{display:flex;align-items:flex-start;gap:.75rem;font-size:.875rem;color:var(--muted2);line-height:1.5;}
-.check-item .icon{width:20px;height:20px;border-radius:50%;background:rgba(249,115,22,.15);
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:.1rem;font-size:.7rem;}
+.enforce-text .check-list{margin-top:1.5rem;display:flex;flex-direction:column;gap:.85rem;}
+.check-item{display:flex;align-items:flex-start;gap:.75rem;font-size:.875rem;color:var(--muted);line-height:1.5;}
+.check-item .icon{width:21px;height:21px;border-radius:6px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:.05rem;font-size:.7rem;font-weight:700;box-shadow:0 2px 6px rgba(24,119,242,.3);}
 
-/* ── TESTIMONIALS / IMPACT ── */
-.impact{background:var(--bg);}
+/* ── IMPACT ── */
+.impact{background:var(--bg-soft);}
 .impact-cards{margin-top:3rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem;}
-.impact-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:2rem;
-  position:relative;transition:all .3s;}
-.impact-card:hover{border-color:rgba(249,115,22,.2);transform:translateY(-3px);}
-.impact-card .quote{font-size:.95rem;color:var(--muted2);line-height:1.7;font-style:italic;}
+.impact-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:2rem;position:relative;transition:all .3s;box-shadow:0 2px 10px rgba(15,33,72,.04);}
+.impact-card:hover{border-color:rgba(24,119,242,.25);transform:translateY(-3px);box-shadow:0 16px 34px rgba(15,33,72,.09);}
+.impact-card .quote{font-size:.95rem;color:var(--navy-2);line-height:1.7;}
 .impact-card .author{margin-top:1.25rem;display:flex;align-items:center;gap:.75rem;}
-.author-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--orange),#7c3aed);
-  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex-shrink:0;}
-.author-name{font-size:.85rem;font-weight:600;}
-.author-role{font-size:.75rem;color:var(--muted);}
+.author-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--blue),#3b82f6);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex-shrink:0;}
+.author-name{font-size:.85rem;font-weight:700;color:var(--navy);}
+.author-role{font-size:.75rem;color:var(--muted-soft);}
 
 /* ── INSTALL STRIP ── */
-.install{background:var(--bg2);padding:4rem 2rem;}
+.install{background:var(--navy);padding:4.5rem 2rem;}
 .install-inner{max-width:700px;margin:0 auto;text-align:center;}
-.install-inner h2{font-size:1.6rem;font-weight:800;margin-bottom:.5rem;font-family:var(--display);letter-spacing:-.025em;}
-.install-inner p{color:var(--muted2);font-size:.9rem;margin-bottom:2rem;}
-.install-box{background:#0a0a0a;border:1px solid #1e1e1e;border-radius:12px;
-  padding:1rem 1.5rem;display:flex;align-items:center;gap:1rem;justify-content:space-between;flex-wrap:wrap;}
-.install-cmd{font-family:var(--mono);font-size:.92rem;color:var(--orange);}
-.copy-btn{background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.2);color:var(--orange);
-  padding:.35rem .9rem;border-radius:6px;font-size:.75rem;font-weight:600;cursor:pointer;
-  transition:all .2s;font-family:var(--font);}
-.copy-btn:hover{background:rgba(249,115,22,.2);}
+.install-inner h2{font-size:1.7rem;font-weight:800;margin-bottom:.5rem;font-family:var(--display);letter-spacing:-.025em;color:#fff;}
+.install-inner p{color:#9fb0d0;font-size:.92rem;margin-bottom:2rem;}
+.install-box{background:var(--navy-deep);border:1px solid #24365e;border-radius:12px;padding:1rem 1.5rem;display:flex;align-items:center;gap:1rem;justify-content:space-between;flex-wrap:wrap;}
+.install-cmd{font-family:var(--mono);font-size:.95rem;color:#5ea8ff;}
+.copy-btn{background:var(--blue);border:none;color:#fff;padding:.4rem 1rem;border-radius:7px;font-size:.75rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:var(--font);}
+.copy-btn:hover{background:var(--blue-deep);}
 .install-steps{display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;justify-content:center;}
-.install-step{font-family:var(--mono);font-size:.8rem;color:var(--muted2);background:#0f0f0f;
-  border:1px solid var(--border);border-radius:8px;padding:.5rem 1rem;white-space:nowrap;}
-.install-step b{color:var(--orange);}
+.install-step{font-family:var(--mono);font-size:.8rem;color:#9fb0d0;background:rgba(255,255,255,.05);border:1px solid #24365e;border-radius:8px;padding:.5rem 1rem;white-space:nowrap;}
+.install-step b{color:#5ea8ff;}
 
 /* ── FOOTER ── */
 footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem;text-align:center;}
 .footer-logo{display:flex;align-items:center;gap:.6rem;justify-content:center;margin-bottom:1rem;}
-.footer-logo span{font-weight:700;font-size:1rem;font-family:var(--display);letter-spacing:-.01em;}
+.footer-logo span{font-weight:700;font-size:1rem;font-family:var(--display);letter-spacing:-.02em;color:var(--navy);}
 .footer-links{display:flex;gap:1.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:1.5rem;}
 .footer-links a{font-size:.82rem;color:var(--muted);text-decoration:none;transition:color .2s;}
-.footer-links a:hover{color:var(--white);}
-.footer-copy{font-size:.78rem;color:var(--muted);}
-.footer-copy a{color:var(--orange);text-decoration:none;}
+.footer-links a:hover{color:var(--blue);}
+.footer-copy{font-size:.78rem;color:var(--muted-soft);}
+.footer-copy a{color:var(--blue);text-decoration:none;}
 
 /* ── ANIMATIONS ── */
 @keyframes fadeUp{from{opacity:0;transform:translateY(24px);}to{opacity:1;transform:translateY(0);}}
@@ -286,14 +246,13 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
 <!-- ── NAV ── -->
 <nav id="nav">
   <a class="nav-logo" href="#">
-    <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="14" cy="14" r="13" stroke="#f97316" stroke-width="1.5"/>
-      <circle cx="14" cy="14" r="3" fill="#f97316"/>
-      <line x1="14" y1="2" x2="14" y2="6" stroke="#f97316" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="14" y1="22" x2="14" y2="26" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="2" y1="14" x2="6" y2="14" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="22" y1="14" x2="26" y2="14" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round"/>
-      <polygon points="14,4 12,11 14,10 16,11" fill="#f97316" opacity=".9"/>
+    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="14" stroke="#0f2148" stroke-width="2"/>
+      <path d="M9.6 11.6 L6.6 16 L9.6 20.4" stroke="#0f2148" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+      <path d="M22.4 11.6 L25.4 16 L22.4 20.4" stroke="#0f2148" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+      <polygon points="16,6 12.6,16 16,13.6 19.4,16" fill="#1877f2"/>
+      <polygon points="16,26 12.6,16 16,18.4 19.4,16" fill="#0f2148"/>
+      <circle cx="16" cy="16" r="2.2" fill="#0f2148"/>
     </svg>
     <span>GyroCompass</span>
   </a>
@@ -318,28 +277,23 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
   <!-- Compass -->
   <div class="compass-wrap">
     <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
-      <!-- Outer ring -->
-      <circle class="compass-ring" cx="60" cy="60" r="56" stroke="#1f1f1f" stroke-width="1.5"
-        stroke-dasharray="8 4" style="transform-origin:60px 60px;"/>
-      <!-- Middle ring -->
-      <circle cx="60" cy="60" r="44" stroke="rgba(249,115,22,.15)" stroke-width="1"/>
-      <!-- Inner -->
-      <circle cx="60" cy="60" r="32" stroke="rgba(249,115,22,.08)" stroke-width="1"/>
-      <!-- Cardinal ticks -->
-      <line x1="60" y1="4" x2="60" y2="12" stroke="#f97316" stroke-width="2" stroke-linecap="round"/>
-      <line x1="60" y1="108" x2="60" y2="116" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="4" y1="60" x2="12" y2="60" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="108" y1="60" x2="116" y2="60" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
-      <!-- N label -->
-      <text x="60" y="20" fill="#f97316" font-size="8" font-family="Inter" font-weight="700" text-anchor="middle">N</text>
-      <!-- Needle group -->
-      <g class="compass-needle" style="transform-origin:60px 60px;">
-        <polygon points="60,22 55,60 60,56 65,60" fill="#f97316"/>
-        <polygon points="60,98 55,60 60,64 65,60" fill="#374151"/>
+      <circle class="compass-ring" cx="60" cy="60" r="56" stroke="#cdddf5" stroke-width="1.5" stroke-dasharray="8 5"/>
+      <circle cx="60" cy="60" r="44" stroke="rgba(24,119,242,.18)" stroke-width="1"/>
+      <circle cx="60" cy="60" r="32" stroke="rgba(24,119,242,.1)" stroke-width="1"/>
+      <!-- code brackets -->
+      <path d="M30 44 L18 60 L30 76" stroke="#0f2148" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".45"/>
+      <path d="M90 44 L102 60 L90 76" stroke="#0f2148" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".45"/>
+      <!-- cardinal ticks -->
+      <line x1="60" y1="4" x2="60" y2="12" stroke="#1877f2" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="60" y1="108" x2="60" y2="116" stroke="#c2cee2" stroke-width="1.5" stroke-linecap="round"/>
+      <text x="60" y="22" fill="#1877f2" font-size="9" font-family="Geist,Inter" font-weight="800" text-anchor="middle">N</text>
+      <!-- needle -->
+      <g class="compass-needle">
+        <polygon points="60,20 53,60 60,55 67,60" fill="#1877f2"/>
+        <polygon points="60,100 53,60 60,65 67,60" fill="#0f2148"/>
       </g>
-      <!-- Center dot -->
-      <circle cx="60" cy="60" r="4" fill="#f97316"/>
-      <circle cx="60" cy="60" r="2" fill="#080808"/>
+      <circle cx="60" cy="60" r="5" fill="#0f2148"/>
+      <circle cx="60" cy="60" r="2.3" fill="#fff"/>
     </svg>
   </div>
 
@@ -379,13 +333,11 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
     </div>
   </div>
 
-  <!-- Terminal -->
+  <!-- Terminal (hidden in hero) -->
   <div class="terminal-wrap">
     <div class="terminal">
       <div class="term-bar">
-        <div class="term-dot red"></div>
-        <div class="term-dot yellow"></div>
-        <div class="term-dot green"></div>
+        <div class="term-dot red"></div><div class="term-dot yellow"></div><div class="term-dot green"></div>
         <span class="term-title">gyrocompass — your-saas-app</span>
       </div>
       <div class="term-body">
@@ -395,10 +347,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
         <div class="tw">&nbsp;✓ Architecture extracted <span class="td">— 12 components · 6 capabilities · 24 endpoints</span></div>
         <div class="tg">&nbsp;✓ Installed git pre-commit + Claude Code hooks</div>
         <div class="ty">&nbsp;✓ Audit: 3 findings — 1 critical (hardcoded key), 2 high</div>
-        <div class="tw">&nbsp;✓ Generated .gyro/architecture.html <span class="td">(open in browser)</span></div>
-        <div style="margin-top:.5rem"><span class="tc">$</span> <span class="to">gyro mcp start</span></div>
-        <div class="tg">&nbsp;✓ MCP server running — 10 tools available to Claude Code</div>
-        <div style="margin-top:.4rem"><span class="tc">$</span> <span class="tw">&nbsp;</span><span class="cursor"></span></div>
+        <div><span class="tc">$</span> <span class="tw">&nbsp;</span><span class="cursor"></span></div>
       </div>
     </div>
   </div>
@@ -509,7 +458,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
       <div class="feat reveal">
         <div class="feat-icon">🎨</div>
         <h3>Interactive architecture diagram</h3>
-        <p>A polished, dark-themed SVG diagram auto-generated from your source — components color-coded by type, arrows showing dependencies, a drift-evolution timeline, built-in PNG/PDF export. Standalone HTML, no server.</p>
+        <p>A polished SVG diagram auto-generated from your source — components color-coded by type, arrows showing dependencies, a drift-evolution timeline, built-in PNG/PDF export. Standalone HTML, no server.</p>
         <span class="feat-tag">Shareable</span>
       </div>
       <div class="feat reveal">
@@ -552,22 +501,22 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
       <div class="reveal">
         <div class="pr-card">
           <div class="pr-card-bar">
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#6b7280" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#7488ad" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             GitHub PR — gyrocompass-bot commented
           </div>
           <div class="pr-bot">
             <div class="pr-bot-avatar">GC</div>
-            <div><b>gyrocompass-bot</b> &nbsp;<span style="color:var(--muted);font-size:.72rem;">just now</span></div>
+            <div><b>gyrocompass-bot</b> &nbsp;<span style="color:#7488ad;font-size:.72rem;">just now</span></div>
           </div>
           <div class="pr-body">
-            <div style="font-size:.82rem;font-weight:600;margin-bottom:.9rem;color:#e2e8f0;">🏛 Architecture Drift Report &nbsp;·&nbsp; <span style="color:var(--muted)">PR #412</span></div>
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:.9rem;color:#dbe4f5;">🏛 Architecture Drift Report &nbsp;·&nbsp; <span style="color:#7488ad">PR #412</span></div>
 
             <div class="pr-finding">
               <span class="pr-sev sev-high">HIGH</span>
               <div class="pr-finding-text">
                 <div>ADR-001 violated — direct DB access from edge handler</div>
                 <div class="dim">Found: <span class="file">api/routes/orders.py:71</span></div>
-                <div class="dim" style="font-size:.7rem;">Route must call a service, not import <span style="color:#f97316">db.repositories</span> directly</div>
+                <div class="dim" style="font-size:.7rem;">Route must call a service, not import <span style="color:#5ea8ff">db.repositories</span> directly</div>
               </div>
             </div>
 
@@ -588,12 +537,12 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
             </div>
 
             <div class="pr-drift-score">
-              <span style="font-size:.75rem;color:var(--muted2);">Drift score</span>
-              <div class="drift-bar-fill" style="width:45%;height:6px;background:linear-gradient(90deg,#fbbf24,#f97316);border-radius:3px;flex:none;"></div>
+              <span style="font-size:.75rem;color:#9fb0d0;">Drift score</span>
+              <div style="width:45%;height:6px;background:linear-gradient(90deg,#fbbf24,#fb7185);border-radius:3px;"></div>
               <span style="font-size:.8rem;font-weight:700;color:#fbbf24;">45%</span>
             </div>
 
-            <div style="font-size:.7rem;color:var(--muted);margin-top:.75rem;">
+            <div style="font-size:.7rem;color:#7488ad;margin-top:.75rem;">
               🛑 Blocking merge — resolve critical findings or add <code>--no-verify</code> override
             </div>
           </div>
@@ -611,19 +560,17 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
       <h2 class="section-title">The commit that breaks the rules never lands</h2>
       <p class="section-sub">GyroCompass installs a real git pre-commit hook. It runs the full enforcement gate — rules check, drift analysis, attestation — and exits non-zero when the code violates your invariants. The agent sees the exact violation, fixes it locally, and commits cleanly.</p>
       <div class="check-list">
-        <div class="check-item"><div class="icon" style="color:var(--orange)">→</div>Baked-in interpreter path — works even without active venv</div>
-        <div class="check-item"><div class="icon" style="color:var(--orange)">→</div>Claude Code PreToolUse hook for in-session context injection</div>
-        <div class="check-item"><div class="icon" style="color:var(--orange)">→</div>Protected components — block edits to critical modules</div>
-        <div class="check-item"><div class="icon" style="color:var(--orange)">→</div>SHA-256 bound attestations — tied to exact staged diff</div>
-        <div class="check-item"><div class="icon" style="color:var(--orange)">→</div>Bypass only with explicit <code>--no-verify</code></div>
+        <div class="check-item"><div class="icon">→</div>Baked-in interpreter path — works even without active venv</div>
+        <div class="check-item"><div class="icon">→</div>Claude Code PreToolUse hook for in-session context injection</div>
+        <div class="check-item"><div class="icon">→</div>Protected components — block edits to critical modules</div>
+        <div class="check-item"><div class="icon">→</div>SHA-256 bound attestations — tied to exact staged diff</div>
+        <div class="check-item"><div class="icon">→</div>Bypass only with explicit <code>--no-verify</code></div>
       </div>
     </div>
     <div class="reveal">
       <div class="terminal">
         <div class="term-bar">
-          <div class="term-dot red"></div>
-          <div class="term-dot yellow"></div>
-          <div class="term-dot green"></div>
+          <div class="term-dot red"></div><div class="term-dot yellow"></div><div class="term-dot green"></div>
           <span class="term-title">pre-commit hook</span>
         </div>
         <div class="term-body">
@@ -631,15 +578,15 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
           <div style="margin-top:.3rem"><span class="td">GyroCompass — Enforcement Gate</span></div>
           <div><span class="td">────────────────────────────────────</span></div>
           <div><span class="tr">🛑 rules    </span><span class="tw"> 2 invariant violation(s)</span></div>
-          <div style="padding-left:1.1rem;font-size:.75rem;color:#94a3b8;">
+          <div style="padding-left:1.1rem;font-size:.75rem;color:#9fb0d0;">
             • no-direct-db-from-routes<br/>
-            &nbsp;&nbsp;<span style="color:#38bdf8;">api/routes/orders.py:71</span><br/>
+            &nbsp;&nbsp;<span style="color:#5ea8ff;">api/routes/orders.py:71</span><br/>
             &nbsp;&nbsp;<span class="td">"from meridian.db.repositories..."</span>
           </div>
           <div style="margin-top:.3rem"><span class="ty">⚠️  drift   </span><span class="tw"> 45% — 3 event(s)</span></div>
           <div><span class="td">────────────────────────────────────</span></div>
           <div><span class="tr">🛑 COMMIT BLOCKED</span></div>
-          <div style="margin-top:.5rem;color:#6b7280;font-size:.75rem;"># resolve the violation and re-commit</div>
+          <div style="margin-top:.5rem;color:#5a6b8f;font-size:.75rem;"># resolve the violation and re-commit</div>
           <div><span class="tc">$</span> <span class="tw">&nbsp;</span><span class="cursor"></span></div>
         </div>
       </div>
@@ -698,24 +645,21 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:3rem 2rem
 <!-- ── FOOTER ── -->
 <footer>
   <div class="footer-logo">
-    <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-      <circle cx="14" cy="14" r="13" stroke="#f97316" stroke-width="1.5"/>
-      <circle cx="14" cy="14" r="3" fill="#f97316"/>
-      <polygon points="14,4 12,11 14,10 16,11" fill="#f97316"/>
-      <line x1="14" y1="2" x2="14" y2="6" stroke="#f97316" stroke-width="1.5" stroke-linecap="round"/>
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="14" stroke="#0f2148" stroke-width="2"/>
+      <polygon points="16,6 12.6,16 16,13.6 19.4,16" fill="#1877f2"/>
+      <polygon points="16,26 12.6,16 16,18.4 19.4,16" fill="#0f2148"/>
+      <circle cx="16" cy="16" r="2.2" fill="#0f2148"/>
     </svg>
     <span>GyroCompass</span>
   </div>
   <div class="footer-links">
     <a href="https://github.com/gyrocompass-io/gyrocompass" target="_blank">GitHub</a>
-    <a href="GETTING_STARTED.md">Docs</a>
-    <a href="INSTALL.md">Install</a>
+    <a href="https://github.com/gyrocompass-io/gyrocompass/blob/main/GETTING_STARTED.md" target="_blank">Docs</a>
+    <a href="https://github.com/gyrocompass-io/gyrocompass/blob/main/INSTALL.md" target="_blank">Install</a>
     <a href="https://github.com/gyrocompass-io/gyrocompass/blob/main/LICENSE" target="_blank">MIT License</a>
   </div>
-  <p class="footer-copy">
-    © 2026 GyroCompass · Open source · MIT licensed ·
-    Design system adapted from <a href="https://github.com/cocoon-ai/architecture-diagram-generator" target="_blank">architecture-diagram-generator</a> (MIT)
-  </p>
+  <p class="footer-copy">© 2026 GyroCompass · Open source · MIT licensed</p>
 </footer>
 
 <script>
@@ -726,9 +670,7 @@ window.addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY
 // ── Reveal on scroll ──
 const observer = new IntersectionObserver((entries) => {
   entries.forEach((e, i) => {
-    if (e.isIntersecting) {
-      setTimeout(() => e.target.classList.add('visible'), i * 80);
-    }
+    if (e.isIntersecting) setTimeout(() => e.target.classList.add('visible'), i * 80);
   });
 }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
 document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
@@ -742,8 +684,7 @@ const countObserver = new IntersectionObserver((entries) => {
     if (!target) return;
     const suffix = el.textContent.replace(/[0-9]/g, '');
     const num = parseInt(target);
-    let start = 0;
-    const duration = 1600;
+    let start = 0; const duration = 1600;
     const step = (ts) => {
       if (!start) start = ts;
       const progress = Math.min((ts - start) / duration, 1);
