@@ -1,0 +1,5 @@
+# Deploy ONLY the landing page — keep all source/code off the public Vercel site.
+# (The source already lives on GitHub; no need to serve it from the marketing domain.)
+*
+!index.html
+!vercel.json
