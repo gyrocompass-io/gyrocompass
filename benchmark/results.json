@@ -1,0 +1,151 @@
+{
+  "audit": {
+    "total_cases": 27,
+    "positives": 14,
+    "decoys": 13,
+    "overall": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "false_positive_rate": 0.0,
+      "accuracy": 1.0,
+      "tp": 14,
+      "fp": 0,
+      "fn": 0,
+      "tn": 13
+    },
+    "by_category": {
+      "auth": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "accuracy": 1.0,
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "tn": 2
+      },
+      "dependencies": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "accuracy": 1.0,
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "tn": 1
+      },
+      "injection": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "accuracy": 1.0,
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "tn": 4
+      },
+      "pii": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "accuracy": 1.0,
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "tn": 2
+      },
+      "secrets": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "accuracy": 1.0,
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "tn": 4
+      }
+    },
+    "errors": []
+  },
+  "rules": {
+    "total_cases": 3,
+    "metrics": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "false_positive_rate": 0.0,
+      "accuracy": 1.0,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "tn": 2
+    },
+    "errors": []
+  },
+  "indexing": {
+    "repos": [
+      {
+        "repo": "gyrocompass (self)",
+        "files": 31,
+        "seconds": 0.08,
+        "files_per_sec": 412.6,
+        "components": 8,
+        "capabilities": 1,
+        "endpoints": 0,
+        "languages": [
+          "python"
+        ]
+      },
+      {
+        "repo": "meridian-demo",
+        "files": 33,
+        "seconds": 0.02,
+        "files_per_sec": 1556.5,
+        "components": 8,
+        "capabilities": 5,
+        "endpoints": 9,
+        "languages": [
+          "Python",
+          "python"
+        ]
+      },
+      {
+        "repo": "code-graph-rag",
+        "files": 336,
+        "seconds": 0.46,
+        "files_per_sec": 732.5,
+        "components": 21,
+        "capabilities": 1,
+        "endpoints": 0,
+        "languages": [
+          "Python",
+          "python"
+        ]
+      },
+      {
+        "repo": "beads (Go)",
+        "files": 1090,
+        "seconds": 1.36,
+        "files_per_sec": 803.0,
+        "components": 58,
+        "capabilities": 7,
+        "endpoints": 0,
+        "languages": [
+          "Go",
+          "JavaScript",
+          "TypeScript",
+          "go",
+          "javascript",
+          "python",
+          "typescript"
+        ]
+      }
+    ]
+  }
+}

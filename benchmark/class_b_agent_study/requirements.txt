@@ -1,0 +1,9 @@
+# Dependencies for the Class B agent token/quality study harness.
+#
+# NOTE: The --dry-run path of run_study.py requires only the stdlib plus
+# PyYAML. The `openai` and `tenacity` packages are imported lazily inside the
+# --run path, so you can preview the study matrix without installing them.
+
+openai>=1.51.0
+pyyaml>=6.0
+tenacity>=8.0

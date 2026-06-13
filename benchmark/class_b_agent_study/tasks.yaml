@@ -1,0 +1,223 @@
+# Class B Agent Study — Task Suite
+#
+# Realistic coding tasks for a layered ("Meridian-style") backend application
+# whose intended dependency direction is:
+#
+#     api  ->  services  ->  db / clients
+#
+# i.e. HTTP routers/controllers call into a service layer; only the service
+# layer is allowed to touch the database repositories or external clients.
+# Routers must NOT import db repositories or external client SDKs directly,
+# and the db layer must NOT call back up into services or the api.
+#
+# Each task is run identically by BOTH study arms (BASELINE and GYRO). The only
+# difference between arms is whether the agent is also given GyroCompass's
+# architecture context. The `constraint` block is NOT shown to the agent; it is
+# used only by the graders to score the produced solution.
+#
+# Fields per task:
+#   id            Stable identifier (used in results.json).
+#   prompt        The natural-language coding request given to the agent.
+#   constraint:
+#     description     Human-readable architectural rule the solution must respect.
+#     forbidden_imports   Regex patterns that, if present in the agent's output,
+#                         indicate a layering violation (deterministic grader).
+#     layer           The layer the new/changed code is expected to live in.
+#
+# NOTE: These tasks are intentionally phrased the way a normal ticket would be —
+# they do NOT spell out the architecture rule. That is the whole point of the
+# study: GyroCompass supplies that missing context to the GYRO arm.
+
+architecture_summary: |
+  Meridian is a layered Python web service.
+
+  Layers (allowed dependency direction is top-to-bottom only):
+    - api/        FastAPI routers. Parse/validate requests, call services,
+                  shape responses. MUST NOT import from db/ or clients/.
+    - services/   Business logic and orchestration. The ONLY layer allowed to
+                  import from db/ (repositories) and clients/ (external SDKs).
+    - db/         SQLAlchemy repositories + models. MUST NOT import services/ or api/.
+    - clients/    Thin wrappers over external APIs (payments, email, search).
+                  MUST NOT import services/ or api/.
+
+  Invariants:
+    - Routers never construct DB sessions or call repositories directly.
+    - Routers never instantiate external client SDKs directly.
+    - Cross-cutting concerns (auth, money math) live in services, not routers.
+    - No circular imports across layers; dependencies point downward only.
+
+tasks:
+  - id: bulk_export_orders
+    prompt: >
+      Add a bulk-export endpoint for orders that returns all orders for a given
+      customer as a CSV download. Wire it into the orders router.
+    constraint:
+      description: >
+        The endpoint must fetch orders through an OrderService method, not by
+        querying the order repository or a DB session directly from the router.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "from\\s+\\.\\.db\\.repositories"
+        - "import\\s+db\\.repositories"
+        - "OrderRepository\\("
+        - "Session\\(\\)"
+      layer: api
+
+  - id: refund_payment
+    prompt: >
+      Add a "refund payment" feature so support staff can refund a charge by
+      order id. Expose it as a POST endpoint and process the refund.
+    constraint:
+      description: >
+        Refund logic and the payment-client call must live in a service. The
+        router must not import or instantiate the Stripe/payments client.
+      forbidden_imports:
+        - "from\\s+clients\\.payments"
+        - "import\\s+stripe"
+        - "PaymentsClient\\("
+        - "stripe\\.Refund"
+      layer: api
+
+  - id: customer_search_filter
+    prompt: >
+      Add the ability to filter the customer list endpoint by signup date range
+      and account status. Update the GET /customers route accordingly.
+    constraint:
+      description: >
+        Filtering must be delegated to CustomerService; the router must not
+        build SQLAlchemy queries or import the customer repository.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "from\\s+db\\.models"
+        - "\\.query\\("
+        - "select\\(Customer\\)"
+        - "CustomerRepository\\("
+      layer: api
+
+  - id: order_total_recompute
+    prompt: >
+      Orders sometimes have stale totals after line-item edits. Add logic to
+      recompute an order's total (sum of line items, tax, discounts) and persist it.
+    constraint:
+      description: >
+        Money math and orchestration belong in OrderService. The repository
+        layer should only read/write; it must not import services or api.
+      forbidden_imports:
+        - "from\\s+services"
+        - "import\\s+services"
+        - "from\\s+\\.\\.services"
+      layer: services
+
+  - id: welcome_email
+    prompt: >
+      Send a welcome email when a new customer registers. Hook it into the
+      existing customer registration flow.
+    constraint:
+      description: >
+        The email-client call must be made from a service (e.g. CustomerService
+        or a NotificationService). The router must not import the email client.
+      forbidden_imports:
+        - "from\\s+clients\\.email"
+        - "import\\s+sendgrid"
+        - "EmailClient\\("
+      layer: api
+
+  - id: inventory_reserve
+    prompt: >
+      When an order is placed, reserve inventory for each line item so it cannot
+      be oversold. Add this to the order-placement path.
+    constraint:
+      description: >
+        Inventory reservation is business logic; it must live in a service and
+        use the inventory repository. The router must not touch repositories.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "InventoryRepository\\("
+        - "Session\\(\\)"
+      layer: services
+
+  - id: paginated_invoices
+    prompt: >
+      Add pagination (limit/offset) to the GET /invoices endpoint and return a
+      total count alongside the page of results.
+    constraint:
+      description: >
+        Pagination must be requested from InvoiceService; the router must not
+        query the invoice repository or a DB session directly.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "InvoiceRepository\\("
+        - "\\.query\\("
+        - "Session\\(\\)"
+      layer: api
+
+  - id: webhook_payment_status
+    prompt: >
+      Add a webhook handler that receives payment-status updates from the
+      payments provider and updates the matching order's payment state.
+    constraint:
+      description: >
+        The router should validate the webhook then hand off to a service to
+        update state. It must not import the payments client or the order repo.
+      forbidden_imports:
+        - "from\\s+clients\\.payments"
+        - "from\\s+db\\.repositories"
+        - "import\\s+stripe"
+        - "OrderRepository\\("
+      layer: api
+
+  - id: customer_soft_delete
+    prompt: >
+      Add a "deactivate customer" action that soft-deletes a customer (sets a
+      deleted_at timestamp) and is exposed via DELETE /customers/{id}.
+    constraint:
+      description: >
+        Soft-delete orchestration belongs in CustomerService. The router must
+        not import the customer repository or build the update query itself.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "CustomerRepository\\("
+        - "\\.query\\("
+      layer: api
+
+  - id: search_index_sync
+    prompt: >
+      When a product is updated, keep the search index in sync by pushing the
+      change to the search service. Add this to the product-update flow.
+    constraint:
+      description: >
+        The search-client call must happen inside a service. The router must
+        not import the search client SDK directly.
+      forbidden_imports:
+        - "from\\s+clients\\.search"
+        - "import\\s+elasticsearch"
+        - "SearchClient\\("
+      layer: api
+
+  - id: order_status_history
+    prompt: >
+      Record a status-history entry every time an order's status changes, and
+      add a GET endpoint to retrieve an order's status history.
+    constraint:
+      description: >
+        Writing history entries and reading them must go through OrderService;
+        the router must not access the history repository directly.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "OrderHistoryRepository\\("
+        - "Session\\(\\)"
+      layer: api
+
+  - id: discount_apply
+    prompt: >
+      Add support for applying a discount code to an order, validating the code
+      and adjusting the order total. Expose it as POST /orders/{id}/discount.
+    constraint:
+      description: >
+        Discount validation and total adjustment are business logic and must
+        live in a service. The router must not query the discount repository.
+      forbidden_imports:
+        - "from\\s+db\\.repositories"
+        - "DiscountRepository\\("
+        - "\\.query\\("
+      layer: api

@@ -257,13 +257,18 @@ def _looks_sql_dynamic(line: str) -> bool:
     m = _SQL_STRING_START.search(line)
     if not m:
         return False
-    # Must be dynamic: f-string with a {placeholder}, or '...' + var concatenation.
+    # Must be dynamic: f-string with a {placeholder}, or string concatenation,
+    # or old-style % formatting APPLIED to the string. Crucially, a `%s`
+    # placeholder *inside* a string passed to exec(sql, params) is the SAFE
+    # parameterized form — we only flag the `%` *operator* (closing-quote then %),
+    # e.g.  "... id=%s" % uid  — not  execute("... id=%s", (uid,)).
     is_fstring = bool(re.match(r"(?i)(f|rf|fr)['\"]", line[m.start():]))
     has_brace = "{" in line
-    has_concat = bool(re.search(r"['\"]\s*\+\s*\w", line)) or "%s" in line.lower() and "%" in line
+    has_str_concat = bool(re.search(r"['\"]\s*\+\s*\w", line))
+    has_pct_format = bool(re.search(r"['\"]\s*%\s*[\w(]", line))  # "..." % var / % (
     if is_fstring and has_brace:
         return True
-    if has_concat:
+    if has_str_concat or has_pct_format:
         return True
     return False
 
